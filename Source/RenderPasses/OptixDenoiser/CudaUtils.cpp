@@ -100,7 +100,7 @@ bool initOptix(OptixDeviceContext& optixContext)
     OPTIX_CHECK(optixInit());
 
     // Check if we have a valid OptiX function table.  If not, return now.
-    if (!g_optixFunctionTable.optixDeviceContextCreate) return false;
+    if (!OPTIX_FUNCTION_TABLE_SYMBOL.optixDeviceContextCreate) return false;
 
     // Setup which device to work on.  Hard coded to device #0
     int32_t deviceId = 0;

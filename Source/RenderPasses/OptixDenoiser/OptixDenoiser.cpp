@@ -80,7 +80,7 @@ OptixDenoiser_::OptixDenoiser_(std::shared_ptr<Device> pDevice, const Dictionary
             mSelectBestMode = false;
         }
         else if (key == kBlend) mDenoiser.params.blendFactor = value;
-        else if (key == kDenoiseAlpha) mDenoiser.params.denoiseAlpha = (value ? OptixDenoiserAlphaMode::OPTIX_DENOISER_ALPHA_MODE_FULL_DENOISE_PASS : OptixDenoiserAlphaMode::OPTIX_DENOISER_ALPHA_MODE_COPY);
+        else if (key == kDenoiseAlpha) mDenoiser.options.denoiseAlpha = (value ? OptixDenoiserAlphaMode::OPTIX_DENOISER_ALPHA_MODE_DENOISE : OptixDenoiserAlphaMode::OPTIX_DENOISER_ALPHA_MODE_COPY);
         else logWarning("Unknown field '{}' in a OptixDenoiser dictionary.", key);
     }
 
@@ -103,7 +103,7 @@ Dictionary OptixDenoiser_::getScriptingDictionary()
     d[kEnabled] = mEnabled;
     d[kBlend] = mDenoiser.params.blendFactor;
     d[kModel] = mDenoiser.modelKind;
-    d[kDenoiseAlpha] = bool(mDenoiser.params.denoiseAlpha > 0);
+    d[kDenoiseAlpha] = bool(mDenoiser.options.denoiseAlpha > 0);
 
     return d;
 }
@@ -413,10 +413,10 @@ void OptixDenoiser_::renderUI(Gui::Widgets& widget)
         }
 
         {
-            bool denoiseAlpha = mDenoiser.params.denoiseAlpha != 0;
+            bool denoiseAlpha = mDenoiser.options.denoiseAlpha != 0;
             if (widget.checkbox("Denoise Alpha?", denoiseAlpha))
             {
-                mDenoiser.params.denoiseAlpha = denoiseAlpha ? OptixDenoiserAlphaMode::OPTIX_DENOISER_ALPHA_MODE_FULL_DENOISE_PASS : OptixDenoiserAlphaMode::OPTIX_DENOISER_ALPHA_MODE_COPY;
+                mDenoiser.options.denoiseAlpha = denoiseAlpha ? OptixDenoiserAlphaMode::OPTIX_DENOISER_ALPHA_MODE_DENOISE : OptixDenoiserAlphaMode::OPTIX_DENOISER_ALPHA_MODE_COPY;
             }
             widget.tooltip("Denoise the alpha channel, not just RGB.");
         }
