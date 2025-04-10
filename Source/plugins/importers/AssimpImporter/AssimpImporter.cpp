@@ -402,7 +402,7 @@ void createLights(ImporterData& data)
             createPointLight(data, pAiLight);
             break;
         default:
-            logWarning("AssimpImporter: Light '{}' has unsupported type {}, ignoring.", pAiLight->mName.C_Str(), pAiLight->mType);
+            logWarning("AssimpImporter: Light '{}' has unsupported type {}, ignoring.", pAiLight->mName.C_Str(), static_cast<int>(pAiLight->mType));
             continue;
         }
     }

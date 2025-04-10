@@ -1,35 +1,34 @@
 /***************************************************************************
- # Copyright (c) 2015-21, NVIDIA CORPORATION. All rights reserved.
- #
- # Redistribution and use in source and binary forms, with or without
- # modification, are permitted provided that the following conditions
- # are met:
- #  * Redistributions of source code must retain the above copyright
- #    notice, this list of conditions and the following disclaimer.
- #  * Redistributions in binary form must reproduce the above copyright
- #    notice, this list of conditions and the following disclaimer in the
- #    documentation and/or other materials provided with the distribution.
- #  * Neither the name of NVIDIA CORPORATION nor the names of its
- #    contributors may be used to endorse or promote products derived
- #    from this software without specific prior written permission.
- #
- # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS "AS IS" AND ANY
- # EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- # PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- # CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- # EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- # PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- # PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
- # OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- **************************************************************************/
+# Copyright (c) 2015-24, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS "AS IS" AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+**************************************************************************/
 #include "MitsubaImporter.h"
 #include "Parser.h"
 #include "Loader.h"
 #include "Tables.h"
-//#include "skymodel/sunmodel.h"
 #include "Utils/Math/Common.h"
 #include "Utils/Math/FalcorMath.h"
 #include "Utils/Math/MathHelpers.h"
@@ -45,8 +44,10 @@
 #include "Rendering/Materials/PLT/PLTDiffractionGratedConductorMaterial.h"
 
 #include <glm/gtx/euler_angles.hpp>
+#include <pybind11/pybind11.h>
 
 #include <optional>
+#include <unordered_map>
 
 namespace Falcor
 {
@@ -86,10 +87,8 @@ namespace Falcor
 
             void unsupportedType(const std::string& name)
             {
-                logError("Type '{}' is not supported.", name);
+                logWarningOnce("Type '{}' is not supported.", name);
             }
-
-
         };
 
         struct ShapeInfo
@@ -543,9 +542,11 @@ namespace Falcor
                 }
                 else if (props.hasColor3("sigma_s") && props.hasColor3("sigma_a"))
                 {
+                    float3 sigmaS = props.getColor3("sigma_s");
+                    float3 sigmaA = props.getColor3("sigma_a");
                     medium.pHomogeneous = MediumInfo::Homogeneous::create();
-                    medium.pHomogeneous->sigmaS = scale * (float3)props.getColor3("sigma_s");
-                    medium.pHomogeneous->sigmaA = scale * (float3)props.getColor3("sigma_a");
+                    medium.pHomogeneous->sigmaS = scale * sigmaS;
+                    medium.pHomogeneous->sigmaA = scale * sigmaA;
                 }
                 else if (props.hasColor3("albedo") && props.hasColor3("sigma_t"))
                 {
@@ -863,8 +864,9 @@ namespace Falcor
             {
                 auto radiance = props.getColor3("radiance");
                 float4 data = radiance;
-                auto pTexture = Texture::create2D(ctx.builder.getDevice().get(), 1, 1, ResourceFormat::RGBA32Float, 1, Texture::kMaxPossible, &data);
-                auto pEnvMap = EnvMap::create(ctx.builder.getDevice(), pTexture);
+                auto pDevice = ctx.builder.getDevice();
+                auto pTexture = Texture::create2D(pDevice.get(), 1, 1, ResourceFormat::RGBA32Float, 1, Texture::kMaxPossible, &data);
+                auto pEnvMap = EnvMap::create(pDevice, pTexture);
                 emitter.pEnvMap = pEnvMap;
             }
             else if (inst.type == "envmap")
@@ -874,7 +876,12 @@ namespace Falcor
                 auto pEnvMap = EnvMap::createFromFile(ctx.builder.getDevice(), filename);
                 if (pEnvMap)
                 {
+                    // const glm::mat4 flipZ({1.f, 0.f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f, 0.f, -1.f, 0.f, 0.f, 0.f, 0.f, 1.f});
+                    // toWorld = toWorld * flipZ;
+
                     pEnvMap->setIntensity(scale);
+                    // float3 rotation;
+                    // extractEulerAngleXYZ(toWorld, rotation.x, rotation.y, rotation.z);
                     pEnvMap->setRotation(glm::degrees(rotation));
                 }
                 emitter.pEnvMap = pEnvMap;
@@ -909,7 +916,6 @@ namespace Falcor
                     if (props.hasTransform("to_world")) throw RuntimeError("Either 'to_world' or 'direction' can be specified, not both.");
                     rotation = props.getFloat3("direction");
                 }
-
                 emitter.useNode = false;
 
                 auto light = DistantLight::create(name);
@@ -990,7 +996,13 @@ namespace Falcor
 
                         if (sensor.pCamera)
                         {
-                            // SceneBuilder::Node node { id, rmcv::toRMCV(sensor.transform) };
+                            float4x4 TransformMatrix;
+                            for (int r = 0; r < 4; ++r)
+                            {
+                                memcpy(&TransformMatrix[r], &sensor.transform[r], 4 * sizeof(float));
+                            }
+
+                            // SceneBuilder::Node node{id, TransformMatrix};
                             // auto nodeID = ctx.builder.addNode(node);
                             // sensor.pCamera->setNodeID(nodeID);
                             ctx.builder.addCamera(sensor.pCamera);
@@ -1004,16 +1016,21 @@ namespace Falcor
 
                         if (emitter.pEnvMap)
                         {
-                            if (ctx.builder.getEnvMap() != nullptr) throw RuntimeError("Only one envmap can be added.");
+                            if (ctx.builder.getEnvMap() != nullptr)
+                                logWarning("Only one envmap can be added.");
                             ctx.builder.setEnvMap(emitter.pEnvMap);
                         }
                         else if (emitter.pLight)
                         {
-                            if (emitter.useNode) {
-                                SceneBuilder::Node node { id, rmcv::toRMCV(emitter.transform) };
-                                auto nodeID = ctx.builder.addNode(node);
-                                emitter.pLight->setNodeID(nodeID);
+                            float4x4 TransformMatrix;
+                            for (int r = 0; r < 4; ++r)
+                            {
+                                memcpy(&TransformMatrix[r], &emitter.transform[r], 4 * sizeof(float));
                             }
+
+                            SceneBuilder::Node node{id, TransformMatrix};
+                            auto nodeID = ctx.builder.addNode(node);
+                            emitter.pLight->setNodeID(nodeID);
                             ctx.builder.addLight(emitter.pLight);
                         }
                     }
@@ -1025,7 +1042,13 @@ namespace Falcor
 
                         if (shape.pMesh && shape.pMaterial)
                         {
-                            SceneBuilder::Node node { id, rmcv::toRMCV(shape.transform) };
+                            float4x4 TransformMatrix;
+                            for (int r = 0; r < 4; ++r)
+                            {
+                                memcpy(&TransformMatrix[r], &shape.transform[r], 4 * sizeof(float));
+                            }
+
+                            SceneBuilder::Node node{id, TransformMatrix};
                             auto nodeID = ctx.builder.addNode(node);
                             auto meshID = ctx.builder.addTriangleMesh(shape.pMesh, shape.pMaterial);
                             ctx.builder.addMeshInstance(nodeID, meshID);
@@ -1053,31 +1076,24 @@ namespace Falcor
                 }
             }
         }
-    }
+
+    } // namespace Mitsuba
 
     void MitsubaImporter::importScene(const std::filesystem::path& path, SceneBuilder& builder, const Dictionary& dict)
     {
         if (!path.is_absolute())
-            throw ImporterError(path, "Expected absolute path.");
-
-        std::filesystem::path fullpath;
-        if (!findFileInDataDirectories(path, fullpath))
-        {
-            throw ImporterError(path, "File not found.");
-        }
-
-        pugi::xml_document doc;
-        auto result = doc.load_file(fullpath.c_str(), pugi::parse_default | pugi::parse_comments);
-        if (!result)
-        {
-            throw ImporterError(path, "Failed to parse XML: {}", result.description());
-        }
+           throw ImporterError(path, "Path must be absolute.");
 
         try
         {
-            Mitsuba::XMLSource src { path.string(), doc};
+            pugi::xml_document doc;
+            auto result = doc.load_file(path.c_str(), pugi::parse_default | pugi::parse_comments);
+            if (!result)
+                throw ImporterError(path, "Failed to parse XML: {}", result.description());
+
+            Mitsuba::XMLSource src { path.string(), doc };
             Mitsuba::XMLContext ctx;
-            ctx.resolver.append(fullpath.parent_path());
+            ctx.resolver.append(std::filesystem::path(path).parent_path());
             Mitsuba::Properties props;
             pugi::xml_node root = doc.document_element();
             size_t argCounter = 0;
@@ -1101,4 +1117,5 @@ namespace Falcor
     {
         registry.registerClass<Importer, MitsubaImporter>();
     }
-}
+
+} // namespace Falcor

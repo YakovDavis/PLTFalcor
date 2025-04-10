@@ -1,30 +1,30 @@
 /***************************************************************************
- # Copyright (c) 2015-21, NVIDIA CORPORATION. All rights reserved.
- #
- # Redistribution and use in source and binary forms, with or without
- # modification, are permitted provided that the following conditions
- # are met:
- #  * Redistributions of source code must retain the above copyright
- #    notice, this list of conditions and the following disclaimer.
- #  * Redistributions in binary form must reproduce the above copyright
- #    notice, this list of conditions and the following disclaimer in the
- #    documentation and/or other materials provided with the distribution.
- #  * Neither the name of NVIDIA CORPORATION nor the names of its
- #    contributors may be used to endorse or promote products derived
- #    from this software without specific prior written permission.
- #
- # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS "AS IS" AND ANY
- # EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- # PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- # CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- # EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- # PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- # PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
- # OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- **************************************************************************/
+# Copyright (c) 2015-24, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS "AS IS" AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+**************************************************************************/
 #pragma once
 #include "Resolver.h"
 #include "Utils/Math/MathHelpers.h"
@@ -33,8 +33,13 @@
 #include "Utils/Color/SpectrumUtils.h"
 
 #include <pugixml.hpp>
-#include <glm/gtx/transform.hpp>
 
+#include <set>
+#include <map>
+#include <variant>
+#include <unordered_map>
+
+#include <glm/gtc/matrix_access.hpp>
 
 namespace Falcor
 {
@@ -88,7 +93,8 @@ namespace Falcor
             std::string getNamedReference(const std::string& name) const
             {
                 auto it = mNamedReferences.find(name);
-                if (it == mNamedReferences.end()) throw RuntimeError("Cannot find named reference '{}'.", name);
+                if (it == mNamedReferences.end())
+                    logWarning("Cannot find named reference '{}'.", name);
                 return it->second;
             }
 
@@ -128,11 +134,11 @@ namespace Falcor
                 auto it = mProperties.find(name);
                 if (it == mProperties.end())
                 {
-                    throw RuntimeError("Property '{}' not found.", name);
+                    logWarning("Property '{}' not found.", name);
                 }
                 if (!std::holds_alternative<T>(it->second))
                 {
-                    throw RuntimeError("Property '{}' has invalid type.", name);
+                    logWarning("Property '{}' has invalid type.", name);
                 }
                 return std::get<T>(it->second);
             }
@@ -147,7 +153,7 @@ namespace Falcor
                 }
                 if (!std::holds_alternative<T>(it->second))
                 {
-                    throw RuntimeError("Property '{}' has invalid type.", name);
+                    logWarning("Property '{}' has invalid type.", name);
                 }
                 return std::get<T>(it->second);
             }
@@ -172,25 +178,6 @@ namespace Falcor
             std::map<std::string, VariantType> mProperties;
             std::map<std::string, std::string> mNamedReferences;
         };
-
-#if 0
-        /** Convert a variant property value to a string.
-        */
-        static std::string to_string(const Properties::VariantType& value)
-        {
-            return std::visit([](auto&& value) {
-                using T = std::decay_t<decltype(value)>;
-                if constexpr (std::is_same_v<T, bool>) return std::string(value ? "true" : "false");
-                else if constexpr (std::is_same_v<T, int64_t>) return std::to_string(value);
-                else if constexpr (std::is_same_v<T, float>) return std::to_string(value);
-                else if constexpr (std::is_same_v<T, std::string>) return value;
-                else if constexpr (std::is_same_v<T, float3>) return to_string(value);
-                else if constexpr (std::is_same_v<T, Color3>) return fmt::format("Color3({}, {}, {})", value.r, value.g, value.b);
-                else if constexpr (std::is_same_v<T, glm::mat4>) return std::string("Transform()");
-                else static_assert(always_false_v<T>, "non-exhaustive visitor!");
-            }, value);
-        }
-#endif
 
         /** Mitsuba scene tags.
         */
@@ -275,7 +262,7 @@ namespace Falcor
             {
                 if (std::sscanf(value, "%lu.%lu.%lu", &major, &minor, &patch) != 3)
                 {
-                    throw RuntimeError("Version string must have x.x.x format.");
+                    logWarning("Version string must have x.x.x format.");
                 }
             }
 
@@ -327,22 +314,12 @@ namespace Falcor
         {
             std::string id;
             const pugi::xml_document& doc;
-            // std::function<std::string(ptrdiff_t)> offset;
-            // size_t depth = 0;
-            // bool modified = false;
 
             template<typename... Args>
             [[noreturn]] void throwError(const pugi::xml_node& node, const std::string& fmtString, Args&&... args)
             {
-                throw RuntimeError(fmtString, std::forward<Args>(args)...);
+                logWarning(fmtString, std::forward<Args>(args)...);
             }
-
-            // template <typename... Args>
-            // [[noreturn]]
-            // void throw_error(const pugi::xml_node &n, const std::string &msg_, Args&&... args) {
-            //     std::string msg = "Error while loading \"%s\" (at %s): " + msg_ + ".";
-            //     Throw(msg.c_str(), id, offset(n.offset_debug()), args...);
-            // }
         };
 
         /// Throws if non-whitespace characters are found after the given index.
@@ -350,7 +327,8 @@ namespace Falcor
         {
             for (size_t i = offset; i < s.size(); ++i)
             {
-                if (!std::isspace(s[i])) throw RuntimeError("Invalid whitespace");
+                if (!std::isspace(s[i]))
+                    logWarning("Invalid whitespace");
             }
         }
 
@@ -375,7 +353,8 @@ namespace Falcor
         void checkAttributes(XMLSource& src, const pugi::xml_node& node, std::set<std::string>&& attrs, bool expectAll = true)
         {
             bool foundOne = false;
-            for (auto attr : node.attributes()) {
+            for (auto attr : node.attributes())
+            {
                 auto it = attrs.find(attr.name());
                 if (it == attrs.end())
                 {
@@ -420,7 +399,7 @@ namespace Falcor
             }
         }
 
-        float3 parseNamedVector(XMLSource& src, pugi::xml_node& node, const std::string &attrName)
+        float3 parseNamedVector(XMLSource& src, pugi::xml_node& node, const std::string& attrName)
         {
             auto vecStr = node.attribute(attrName.c_str()).value();
             auto list = splitString(vecStr, ",");
@@ -569,7 +548,8 @@ namespace Falcor
                 {
                     pugi::xml_attribute attr = result.attribute();
                     char const* val = attr.value();
-                    if (val && val[0] == '_') {
+                    if (val && val[0] == '_')
+                    {
                         std::string new_id = std::string("ID") + val + "__UPGR";
                         // Log(Warn, "Changing identifier: \"%s\" -> \"%s\"", val, new_id.c_str()); TODO
                         attr = new_id.c_str();
@@ -635,7 +615,6 @@ namespace Falcor
 
             // src.modified = true; TODO
         }
-
 
         std::pair<std::string, std::string> parseXML(XMLSource& src, XMLContext& ctx,
             pugi::xml_node& node, Tag parentTag,
@@ -728,7 +707,8 @@ namespace Falcor
             }
             else if (currentIsObject || tag == Tag::NamedReference)
             {
-                node.append_attribute("name") = fmt::format("_arg_{}", argCounter++).c_str();
+                // To keep shape/bsdf/etc in the same order by padding leading zeros.
+                node.append_attribute("name") = fmt::format("_arg_{:04d}", argCounter++).c_str();
             }
 
             // Check for valid id and set generic id if none is set.
@@ -759,10 +739,10 @@ namespace Falcor
 
                 // Check if instance with this id already exists.
                 {
-                    auto it = ctx.instances.find(id);
-                    if (it != ctx.instances.end())
+                    auto it2 = ctx.instances.find(id);
+                    if (it2 != ctx.instances.end())
                     {
-                        src.throwError(node, "Node '{}' has duplicate id '{}' (previous was at {}).", nodeName, id, it->second.location);
+                        src.throwError(node, "Node '{}' has duplicate id '{}' (previous was at {}).", nodeName, id, it2->second.location);
                     }
                 }
 
@@ -810,28 +790,28 @@ namespace Falcor
             case Tag::Alias:
             {
                 // TODO implement
-                throw RuntimeError("not implemented");
+                logWarning("not implemented");
             }
             break;
 
             case Tag::Default:
             {
                 // TODO implement
-                throw RuntimeError("not implemented");
+                logWarning("not implemented");
             }
             break;
 
             case Tag::Resource:
             {
                 // TODO implement
-                throw RuntimeError("not implemented");
+                logWarning("not implemented");
             }
             break;
 
             case Tag::Include:
             {
                 // TODO implement
-                throw RuntimeError("not implemented");
+                logWarning("not implemented");
             }
             break;
 
@@ -945,7 +925,8 @@ namespace Falcor
                 float angle;
                 try { angle = parseFloat(value); }
                 catch (...) { src.throwError(node, "Could not parse floating point value '{}'.", value); }
-                ctx.transform = glm::rotate(glm::radians(angle), vec) * ctx.transform;
+                angle = angle / 180.f * M_PI; // Degree to radian
+                ctx.transform = glm::rotate(angle, vec) * ctx.transform;
             }
             break;
 
@@ -982,7 +963,17 @@ namespace Falcor
                     buildFrame(normalize(target - origin), up, tmp);
                 }
 
-                ctx.transform = glm::lookAt(origin, target, up) * ctx.transform;
+                auto vDir = normalize(target - origin);
+                auto vRight = normalize(cross(normalize(up), vDir));
+                auto vNewUp = cross(vDir, vRight);
+
+                glm::mat4 lookAtMatrix;
+                glm::column(lookAtMatrix, 0, float4(vRight, 0.f));
+                glm::column(lookAtMatrix, 1, float4(vNewUp, 0.f));
+                glm::column(lookAtMatrix, 2, float4(vDir, 0.f));
+                glm::column(lookAtMatrix, 3, float4(origin, 1.f));
+
+                ctx.transform = lookAtMatrix * ctx.transform;
             }
             break;
 
@@ -1025,7 +1016,7 @@ namespace Falcor
             break;
 
             default:
-                throw RuntimeError("Unknown tag!");
+                logWarning("Unknown tag!");
             }
 
             for (pugi::xml_node& child : node.children())
@@ -1041,6 +1032,6 @@ namespace Falcor
             return { "", "" };
         }
 
+        } // namespace Mitsuba
 
-    }
-}
+} // namespace Falcor

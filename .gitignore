@@ -1,5 +1,9 @@
-# Build folder.
+# JetBrains files
+.idea/
+
+# Build folders.
 /build/
+/cmake-build-debug/
 
 # Test output folder.
 /tests/data/
