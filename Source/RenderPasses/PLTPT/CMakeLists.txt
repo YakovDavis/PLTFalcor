@@ -17,6 +17,12 @@ target_sources(PLTPT PRIVATE
     pltpt_debug.slangh
     DebugViewType.slangh
     ColourCoding.slang
+
+    SurfaceData.slang
+    LoadSurfaceDataPass.cs.slang
+    ReSTIRHelperFunctions.slang
+    Reservoir.slang
+    TemporalReusePass.cs.slang
 )
 
 target_copy_shaders(PLTPT RenderPasses/PLTPT)

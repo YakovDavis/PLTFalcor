@@ -48,6 +48,8 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 namespace {
     const std::string kSamplePassFileName   = "RenderPasses/PLTPT/pltpt_sample.rt.slang";
     const std::string kSolvePassFileName    = "RenderPasses/PLTPT/pltpt_solve.rt.slang";
+    const std::string kLoadSurfaceDataPassFilename = "RenderPasses/PLTPT/LoadSurfaceDataPass.cs.slang";
+    const std::string kTemporalReusePassFilename = "RenderPasses/PLTPT/TemporalReusePass.cs.slang";
 
     const std::string kShaderModel = "6_5";
 
@@ -55,16 +57,20 @@ namespace {
     static constexpr uint32_t kBasePayloadSizeBytes = 84u;
     static constexpr uint32_t kShadowPayloadSizeBytes = 20u;
     static constexpr uint32_t kPerBouncePayloadSizeBytes = 40u;
+    static constexpr uint32_t kReservoirPayloadSizeBytes = 32u;
     static constexpr uint32_t kMaxRecursionDepth = 1u;
 
     static constexpr uint kVisibilityRayId = 0;
     static constexpr uint kShadowRayId = 1;
 
     const char kInputViewDir[] = "viewW";
+    const std::string kInputVBuffer = "vbuffer";
+    const std::string kInputMotionVectors = "mvec";
 
     const ChannelList kInputChannels = {
-        { "vbuffer",        "gVBuffer",     "Visibility buffer in packed format" },
+        { kInputVBuffer,        "gVBuffer",     "Visibility buffer in packed format" },
         { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
+        { kInputMotionVectors,  "gMotionVectors",   "Motion vector buffer (float format)", true /* optional */},
     };
 
     const ChannelList kOutputChannels = {
@@ -134,6 +140,7 @@ namespace {
     const std::string kMNEESolverThreshold = "MNEESolverThreshold";
 
     const std::string kBounceBufferName = "bounceBuffer";
+    const std::string kPrevBounceBufferName = "prevBounceBuffer";
 }
 
 PLTPT::PLTPT(std::shared_ptr<Device> pDevice) : RenderPass(std::move(pDevice)) {}
@@ -252,6 +259,8 @@ Program::DefineList PLTPT::getDefines() const {
     // Use compression for PackedHitInfo
     // defines.add("HIT_INFO_USE_COMPRESSION", "1");
 
+    defines.add("SAMPLE_GENERATOR_TYPE", std::to_string(SAMPLE_GENERATOR_UNIFORM));
+
     return defines;
 }
 
@@ -368,7 +377,14 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
         if (mpScene)
             setScene(pRenderContext, mpScene);
 
+        createBuffers(pRenderContext, renderData);
+
         mOptionsChanged = false;
+    }
+
+    if (mpBounceBuffers.empty())
+    {
+        createBuffers(pRenderContext, renderData);
     }
 
     // If we have no scene, just clear the outputs and return.
@@ -422,13 +438,6 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
         logWarning("Depth-of-field requires the '{}' input. Expect incorrect shading.", kInputViewDir);
     }
 
-    // Bounce buffer
-    const auto bounceBufferElements = (mMaxBounces+1u) * mTileSize*mTileSize;
-    if (mpBounceBuffer==nullptr || mpBounceBuffer->getElementCount() != (uint32_t)bounceBufferElements) {
-        mpBounceBuffer = Buffer::createStructured(this->mpDevice.get(), kPerBouncePayloadSizeBytes, (uint32_t)bounceBufferElements, Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false);
-        mpBounceBuffer->setName("PLTPT::mpBounceBuffer");
-    }
-
     auto defines = getDefines();
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     // TODO: This should be moved to a more general mechanism using Slang.
@@ -464,7 +473,9 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
         if (mDebugView != 0)
             var["CB"]["kDebugViewIntensity"] = mDebugViewIntensity;
 
-        var["bounceBuffer"] = mpBounceBuffer;
+        var["bounceBuffer"] = mpBounceBuffers[mBounceBufferIndex];
+        var["prevBounceBuffer"] = mpBounceBuffers[(mBounceBufferIndex + 1) % mBounceBufferCount];
+        var["reservoirBuffer"] = mpReservoirBuffers[mBounceBufferIndex];
     };
 
     varSetter(mSampleTracer.pVars->getRootVar());
@@ -494,7 +505,10 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
         mpScene->raytrace(pRenderContext, mSolveTracer.pProgram.get(),  mSolveTracer.pVars,  { mTileSize, mTileSize, 1 });
     }
 
+    loadSurfaceDataPass(pRenderContext, renderData);
+    temporalReusePass(pRenderContext, renderData);
 
+    mBounceBufferIndex = (mBounceBufferIndex + 1) % mBounceBufferCount;
     mFrameCount++;
 }
 
@@ -504,6 +518,8 @@ void PLTPT::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pSce
 
     mpEnvMapSampler = nullptr;
     mpSampleGenerator = nullptr;
+
+    mpTemporalReusePass = nullptr;
 
     mpScene = pScene;
 
@@ -548,6 +564,20 @@ void PLTPT::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pSce
         mSolveTracer.pBindingTable->setHitGroup(kShadowRayId, mpScene->getGeometryIDs(Scene::GeometryType::TriangleMesh), solveDesc.addHitGroup("shadowTriangleMeshHit"));
 
         mSolveTracer.pProgram = RtProgram::create(this->mpDevice, solveDesc, mpScene->getSceneDefines());
+
+        Program::Desc temporalReuseDesc;
+        temporalReuseDesc.addShaderModules(pScene->getShaderModules());
+        temporalReuseDesc.addTypeConformances(globalTypeConformances);
+        temporalReuseDesc.setShaderModel(kShaderModel);
+        temporalReuseDesc.addShaderLibrary(kTemporalReusePassFilename).csEntry("main");
+        mpTemporalReusePass = ComputePass::create(mpDevice, temporalReuseDesc, mpScene->getSceneDefines());
+
+        Program::Desc loadSurfaceDataDesc;
+        loadSurfaceDataDesc.addShaderModules(pScene->getShaderModules());
+        loadSurfaceDataDesc.addTypeConformances(globalTypeConformances);
+        loadSurfaceDataDesc.setShaderModel(kShaderModel);
+        loadSurfaceDataDesc.addShaderLibrary(kLoadSurfaceDataPassFilename).csEntry("main");
+        mpLoadSurfaceDataPass = ComputePass::create(mpDevice, loadSurfaceDataDesc, mpScene->getSceneDefines());
     }
 }
 
@@ -570,4 +600,86 @@ void PLTPT::prepareVars() {
         mpSampleGenerator->setShaderData(mSampleTracer.pVars->getRootVar());
         mpSampleGenerator->setShaderData(mSolveTracer.pVars->getRootVar());
     }
+}
+
+void PLTPT::createBuffers(RenderContext* pRenderContext, const RenderData& renderData) {
+
+    const uint2& targetDim = renderData.getDefaultTextureDims();
+    const auto pixelCount = (uint32_t)(targetDim.x * targetDim.y);
+
+    const auto bounceBufferElements = (mMaxBounces+1u) * mTileSize*mTileSize;
+
+    mpBounceBuffers.clear();
+    mpReservoirBuffers.clear();
+    mpSurfaceData.clear();
+    for (uint i = 0; i < mBounceBufferCount; ++i)
+    {
+        mpBounceBuffers.push_back(Buffer::createStructured(
+            this->mpDevice.get(), kPerBouncePayloadSizeBytes, (uint32_t)bounceBufferElements,
+            Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
+        ));
+        mpBounceBuffers[i]->setName("PLTPT::mpBounceBuffer_" + std::to_string(i));
+
+        mpReservoirBuffers.push_back(Buffer::createStructured(
+            this->mpDevice.get(), kReservoirPayloadSizeBytes, pixelCount,
+            Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
+        ));
+        mpReservoirBuffers[i]->setName("PLTPT::mpReservoirBuffer_" + std::to_string(i));
+
+        mpSurfaceData.push_back(Buffer::createStructured(
+            this->mpDevice.get(), sizeof(uint4) * 2 /*TODO: variable*/, pixelCount,
+            Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
+        ));
+        mpSurfaceData[i]->setName("PLTPT::mpSurfaceData_" + std::to_string(i));
+
+        mpNormalDepth.push_back(Buffer::createStructured(
+            this->mpDevice.get(), sizeof(uint2), pixelCount,
+            Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false));
+        mpNormalDepth[i]->setName("PLTPT::mpNormalDepth_" + std::to_string(i));
+    }
+}
+
+void PLTPT::loadSurfaceDataPass(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    FALCOR_PROFILE(pRenderContext, "PLTPT::loadSurfaceDataPass");
+
+    const uint2& targetDim = renderData.getDefaultTextureDims();
+
+    // Bind resources.
+    auto var = mpLoadSurfaceDataPass->getRootVar()["CB"]["gLoadSurfaceDataPass"];
+
+    var["gFrameDim"] = targetDim;
+    var["gFrameCount"] = mFrameCount;
+
+    var["gVBuffer"] = renderData.getTexture(kInputVBuffer);
+    var["gSurfaceData"] = mpSurfaceData[mBounceBufferIndex];
+    var["gNormalDepth"] = mpNormalDepth[mBounceBufferIndex];
+
+    mpLoadSurfaceDataPass["gScene"] = mpScene->getParameterBlock();
+    mpLoadSurfaceDataPass->execute(pRenderContext, { targetDim, 1u });
+}
+
+void PLTPT::temporalReusePass(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    FALCOR_PROFILE(pRenderContext, "PLTPT::temporalReusePass");
+
+    const uint2& targetDim = renderData.getDefaultTextureDims();
+
+    // Bind resources.
+    auto var = mpTemporalReusePass->getRootVar()["CB"]["gTemporalReusePass"];
+
+    var["gFrameDim"] = targetDim;
+    var["gFrameCount"] = mFrameCount;
+
+    var["gMotionVectors"] = renderData.getTexture(kInputMotionVectors);
+    var["gReservoirs"] = mpReservoirBuffers[mBounceBufferIndex];
+    var["gSurfaceData"] = mpSurfaceData[mBounceBufferIndex];
+
+    var["gPrevSurfaceData"] = mpSurfaceData[(mBounceBufferIndex + 1) % mBounceBufferCount];
+    var["gPrevReservoirs"] = mpReservoirBuffers[(mBounceBufferIndex + 1) % mBounceBufferCount];
+    //var["gDebug"] = renderData.getTexture(kDebug);
+
+    mpTemporalReusePass["gScene"] = mpScene->getParameterBlock();
+
+    mpTemporalReusePass->execute(pRenderContext, { targetDim, 1u });
 }

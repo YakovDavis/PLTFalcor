@@ -54,6 +54,7 @@ import Utils.Color.SpectrumUtils;
 
 import Path;
 import Rendering.PLT;
+import Reservoir;
 
 import Rendering.Lights.LightHelpers;
 import Rendering.Lights.EmissiveLightSampler;
@@ -90,6 +91,7 @@ cbuffer CB {
 // Inputs
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float4> gViewW; // Optional
+Texture2D<float2> gMotionVectors;
 
 // Outputs
 RWTexture2D<float4> gOutputColor;
@@ -127,6 +129,11 @@ static const bool kForceFullyCoherent = false;
 /** Bounce storage */
 
 RWStructuredBuffer<BounceData> bounceBuffer;
+StructuredBuffer<BounceData> prevBounceBuffer;
+
+/** Reservoir storage */
+
+RWStructuredBuffer<PackedReservoir> reservoirBuffer;
 
 // Read a bounce
 BounceData readBounce(int p, const uint2 pixel) {

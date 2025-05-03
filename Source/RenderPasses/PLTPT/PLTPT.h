@@ -65,6 +65,11 @@ private:
     void parseDictionary(const Dictionary& dict);
     void prepareVars();
 
+    void createBuffers(RenderContext* pRenderContext, const RenderData& renderData);
+
+    void temporalReusePass(RenderContext* pRenderContext, const RenderData& renderData);
+    void loadSurfaceDataPass(RenderContext* pRenderContext, const RenderData& renderData);
+
     // Internal state
     Scene::SharedPtr            mpScene;                        ///< Current scene.
     SampleGenerator::SharedPtr  mpSampleGenerator;              ///< GPU sample generator.
@@ -72,8 +77,14 @@ private:
     EmissiveLightSampler::SharedPtr mpEmissiveSampler;
 
     uint32_t                    mTileSize = 512;                ///< Size of a tile
-    uint                        mMaxBounces = 32;               ///< Max number of indirect bounces (0 = none).
-    Buffer::SharedPtr           mpBounceBuffer;                 ///< Per-tile bounce buffer.
+    uint                        mMaxBounces = 0;               ///< Max number of indirect bounces (0 = none).
+    uint                        mBounceBufferCount = 2;
+    uint                        mBounceBufferIndex = 0;
+    std::vector<Buffer::SharedPtr>           mpBounceBuffers;                 ///< Per-tile bounce buffers (vector for swap).
+    std::vector<Buffer::SharedPtr>           mpReservoirBuffers;                 ///< Per-tile reservoir buffers (vector for swap).
+
+    std::vector<Buffer::SharedPtr> mpSurfaceData;                    ///< Pointer to the buffer for surface data (current and prev frame).
+    std::vector<Buffer::SharedPtr> mpNormalDepth;                    ///< Pointer to the buffer for normal depth (current and prev frame).
 
     // Configuration
     uint32_t                    mSelectedSampleGenerator = SAMPLE_GENERATOR_DEFAULT;            ///< Which pseudorandom sample generator to use.
@@ -96,6 +107,7 @@ private:
 
     bool                        mDoNEE = true;
     bool                        mDoMIS = true;
+    bool                        mDoReSTIR = false;
     EmissiveLightSamplerType    mEmissiveSampler = EmissiveLightSamplerType::Power;
     bool                        mDoRussianRoulette = true;
     bool                        mNEEUsePerTileSG = false;
@@ -118,5 +130,8 @@ private:
         RtProgramVars::SharedPtr pVars;
     };
     tracer_t mSampleTracer, mSolveTracer;
+
+    ComputePass::SharedPtr          mpTemporalReusePass;              ///< Compute pass for temporal reuse
+    ComputePass::SharedPtr          mpLoadSurfaceDataPass;              ///< Compute pass for loading surface data
 };
 
