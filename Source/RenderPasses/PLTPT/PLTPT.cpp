@@ -57,7 +57,7 @@ namespace {
     static constexpr uint32_t kBasePayloadSizeBytes = 84u;
     static constexpr uint32_t kShadowPayloadSizeBytes = 20u;
     static constexpr uint32_t kPerBouncePayloadSizeBytes = 40u;
-    static constexpr uint32_t kReservoirPayloadSizeBytes = 32u;
+    static constexpr uint32_t kReservoirPayloadSizeBytes = 40u;
     static constexpr uint32_t kMaxRecursionDepth = 1u;
 
     static constexpr uint kVisibilityRayId = 0;
@@ -101,8 +101,6 @@ namespace {
         { (uint32_t)DebugViewType::coherence_area, "Coherence area" },
         { (uint32_t)DebugViewType::coherence_anisotropy, "Coherence anisotropy" },
         { (uint32_t)DebugViewType::polarization, "Polarization" },
-        { (uint32_t)DebugViewType::mnee_iterations, "MNEE iterations" },
-        { (uint32_t)DebugViewType::mnee_bounces, "MNEE bounces" },
     };
 
     const std::string kMaxBounces = "maxBounces";
@@ -133,11 +131,6 @@ namespace {
     const std::string kNEEUsePerTileSG = "NEEUsePerTileSG";
 
     const std::string kDoImportanceSampleEmitters = "doImportanceSampleEmitters";
-
-    const std::string kDoMNEE = "doMNEE";
-    const std::string kMNEEMaxOccluders = "MNEEMaxOccluders";
-    const std::string kMNEEMaxIterations = "MNEEMaxIterations";
-    const std::string kMNEESolverThreshold = "MNEESolverThreshold";
 
     const std::string kBounceBufferName = "bounceBuffer";
     const std::string kPrevBounceBufferName = "prevBounceBuffer";
@@ -173,10 +166,6 @@ void PLTPT::parseDictionary(const Dictionary& dict) {
         else if (key == kEmissiveSampler) mEmissiveSampler = value;
         else if (key == kDoRussianRoulette) mDoRussianRoulette = value;
         else if (key == kDoImportanceSampleEmitters) mDoImportanceSampleEmitters = value;
-        else if (key == kDoMNEE) mDoMNEE = value;
-        else if (key == kMNEEMaxOccluders) mMNEEMaxOccluders = value;
-        else if (key == kMNEEMaxIterations) mMNEEMaxIterations = value;
-        else if (key == kMNEESolverThreshold) mMNEESolverThreshold = value;
         else logError("Unknown field '{}' in PLTPathTracer dictionary.", key);
     }
 }
@@ -200,13 +189,9 @@ Dictionary PLTPT::getScriptingDictionary() {
     d[kDoNEE] = mDoNEE;
     d[kNEEUsePerTileSG] = mNEEUsePerTileSG;
     d[kDoImportanceSampleEmitters] = mDoImportanceSampleEmitters;
-    d[kDoMNEE] = mDoMNEE;
     d[kDoMIS] = mDoMIS;
     d[kEmissiveSampler] = mEmissiveSampler;
     d[kDoRussianRoulette] = mDoRussianRoulette;
-    d[kMNEEMaxOccluders] = mMNEEMaxOccluders;
-    d[kMNEEMaxIterations] = mMNEEMaxIterations;
-    d[kMNEESolverThreshold] = mMNEESolverThreshold;
     return d;
 }
 
@@ -250,11 +235,6 @@ Program::DefineList PLTPT::getDefines() const {
     defines.add("NEE_USE_PER_TILE_SG_SELECTOR", mNEEUsePerTileSG ? "true" : "false");
 
     defines.add("DO_IMPORTANCE_SAMPLING_EMITTERS", mDoImportanceSampleEmitters ? "true" : "false");
-
-    defines.add("DO_MNEE", mDoMNEE ? "true" : "false");
-    defines.add("MNEE_MAX_MS_OCCLUDERS", std::to_string(mMNEEMaxOccluders));
-    defines.add("MNEE_MAX_ITERATIONS", std::to_string(mMNEEMaxIterations));
-    defines.add("MNEE_SOLVER_THRESHOLD", std::to_string(mMNEESolverThreshold));
 
     // Use compression for PackedHitInfo
     // defines.add("HIT_INFO_USE_COMPRESSION", "1");
@@ -330,16 +310,6 @@ void PLTPT::renderUI(Gui::Widgets& widget) {
 
             dirty |= widget.checkbox("Per-tile NEE light selector", mNEEUsePerTileSG);
             widget.tooltip("Select an NEE light source on a per-tile basis. Reduces divergence.", true);
-
-            if (auto mneegroup = widget.group("MNEE")) {
-                dirty |= widget.checkbox("Manifold Sampling", mDoMNEE);
-                widget.tooltip("Manifold Sampling on NEE.", true);
-                if (mDoMNEE) {
-                    dirty |= widget.slider("Max occluders", mMNEEMaxOccluders, 1u, 2u);
-                    dirty |= widget.slider("Max iterations", mMNEEMaxIterations, 1u, 200u);
-                    dirty |= widget.var("Solver threshold", mMNEESolverThreshold, 1e-6f, 1e-2f, 1e-6f);
-                }
-            }
         }
 
         dirty |= widget.checkbox("Russian Roulette", mDoRussianRoulette);
@@ -494,19 +464,26 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
     for (const auto& channel : kSampleOutputChannels)   bind(channel, true, false);
     for (const auto& channel : kSolveOutputChannels)    bind(channel, false, true);
 
+    loadSurfaceDataPass(pRenderContext, renderData);
 
-    // Render
+    // Sample
     for (uint x=0;x<tiles.x;++x)
     for (uint y=0;y<tiles.y;++y) {
         mSampleTracer.pVars->getRootVar()["CB"]["kTile"] = uint2(x,y);
-        mSolveTracer.pVars->getRootVar()["CB"]["kTile"] = uint2(x,y);
+        //mSolveTracer.pVars->getRootVar()["CB"]["kTile"] = uint2(x,y);
 
         mpScene->raytrace(pRenderContext, mSampleTracer.pProgram.get(), mSampleTracer.pVars, { mTileSize, mTileSize, 1 });
-        mpScene->raytrace(pRenderContext, mSolveTracer.pProgram.get(),  mSolveTracer.pVars,  { mTileSize, mTileSize, 1 });
+        //mpScene->raytrace(pRenderContext, mSolveTracer.pProgram.get(),  mSolveTracer.pVars,  { mTileSize, mTileSize, 1 });
     }
 
-    loadSurfaceDataPass(pRenderContext, renderData);
     temporalReusePass(pRenderContext, renderData);
+
+    for (uint x=0;x<tiles.x;++x)
+    for (uint y=0;y<tiles.y;++y) {
+        mSolveTracer.pVars->getRootVar()["CB"]["kTile"] = uint2(x,y);
+
+        mpScene->raytrace(pRenderContext, mSolveTracer.pProgram.get(),  mSolveTracer.pVars,  { mTileSize, mTileSize, 1 });
+    }
 
     mBounceBufferIndex = (mBounceBufferIndex + 1) % mBounceBufferCount;
     mFrameCount++;
@@ -607,7 +584,7 @@ void PLTPT::createBuffers(RenderContext* pRenderContext, const RenderData& rende
     const uint2& targetDim = renderData.getDefaultTextureDims();
     const auto pixelCount = (uint32_t)(targetDim.x * targetDim.y);
 
-    const auto bounceBufferElements = (mMaxBounces+1u) * mTileSize*mTileSize;
+    const auto bounceBufferElements = (mMaxBounces+1u) * pixelCount;
 
     mpBounceBuffers.clear();
     mpReservoirBuffers.clear();

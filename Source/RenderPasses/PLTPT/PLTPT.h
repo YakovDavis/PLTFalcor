@@ -77,7 +77,7 @@ private:
     EmissiveLightSampler::SharedPtr mpEmissiveSampler;
 
     uint32_t                    mTileSize = 512;                ///< Size of a tile
-    uint                        mMaxBounces = 0;               ///< Max number of indirect bounces (0 = none).
+    uint                        mMaxBounces = 1;               ///< Max number of indirect bounces (0 = none).
     uint                        mBounceBufferCount = 2;
     uint                        mBounceBufferIndex = 0;
     std::vector<Buffer::SharedPtr>           mpBounceBuffers;                 ///< Per-tile bounce buffers (vector for swap).
@@ -105,19 +105,13 @@ private:
 
     bool                        mAlphaMasking = true;
 
-    bool                        mDoNEE = true;
-    bool                        mDoMIS = true;
-    bool                        mDoReSTIR = false;
+    bool                        mDoNEE = false;
+    bool                        mDoMIS = false;
     EmissiveLightSamplerType    mEmissiveSampler = EmissiveLightSamplerType::Power;
     bool                        mDoRussianRoulette = true;
     bool                        mNEEUsePerTileSG = false;
 
     bool                        mDoImportanceSampleEmitters = true;
-
-    bool                        mDoMNEE = true;
-    uint                        mMNEEMaxOccluders = 2;
-    uint                        mMNEEMaxIterations = 60;
-    float                       mMNEESolverThreshold = 5e-5f;
 
     // Runtime data
     uint                        mFrameCount = 0;                ///< Frame count since scene was loaded.

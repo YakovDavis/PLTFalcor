@@ -6,14 +6,16 @@ import Utils.Sampling.SampleGenerator;
 // Since BounceData is in a separate buffer, we only need to store some additional info
 struct PathInfo {
     // 4x4B
-    float wavelength;               ///< Backward sampling wavelength
+    float wavelength;               ///< Hero wavelength
     float weight;                   ///< Path backward weight estimate (via fully-coherent tracing)
     float pdf;                      ///< Path backward sampling pdf
     uint valid;                     ///< is valid path stored
 
-    // 2x4B
+    // 4x4B
     uint id;                        ///< Path ID encodes pixel with 16 bits each for pixel x|y
     uint frameCount;                ///< For SampleGenerator restoration for solve stage
+    uint isPrevBounceBuffer;        ///< If >0 the bounce data is in prevBuffer
+    uint _pad = 0;
 }
 
 struct PackedReservoir
@@ -60,7 +62,19 @@ struct Reservoir {
         this.weightSum += weight;
         this.M += reservoir.M;
 
-        bool isSelected = sampleNext1D(sg) * this.weightSum < weight;
+        bool isSelected;
+        if (!reservoir.pathInfo.valid)
+        {
+            isSelected = false;
+        }
+        else if (!this.pathInfo.valid)
+        {
+            isSelected = true;
+        }
+        else
+        {
+            isSelected = sampleNext1D(sg) * this.weightSum < weight;
+        }
 
         if (isSelected) {
             this.pathInfo = reservoir.pathInfo;
@@ -68,7 +82,6 @@ struct Reservoir {
         }
 
         return isSelected;
-        //return false;
     }
 
     static Reservoir unpack(const PackedReservoir packedReservoir)

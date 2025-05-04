@@ -67,7 +67,8 @@ void forwardUnwindStep(const TriangleHit triangleHit,
 // Replay path and evaluate contributions
 void forwardUnwind(const int bounceIdx, const uint2 pixel, inout PLTBeam beam) {
     for (int p=bounceIdx-1; p>=0; --p) {
-        const BounceData bounce = readBounce(p, pixel);
+        Reservoir r = Reservoir::unpack(reservoirBuffer[pixel.x + pixel.y * 1920]);  // TODO: un-hardcode
+        const BounceData bounce = readBounce(p, pixel, 1920, r.pathInfo.isPrevBounceBuffer); // TODO: un-hardcode
 
         const TriangleHit triangleHit = TriangleHit(bounce.hit);
         const VertexData v = gScene.getVertexData(triangleHit);
@@ -75,20 +76,6 @@ void forwardUnwind(const int bounceIdx, const uint2 pixel, inout PLTBeam beam) {
         const float3 wo = bounce.wi;
 
         forwardUnwindStep(triangleHit, v, wo, bounce.sampledBsdfLobe, beam);
-    }
-}
-void manifoldForwardUnwind(const ManifoldSampleData result,
-                           const float3 origin,
-                           inout PLTBeam beam) {
-    for (int idx=result.hitCount-1; idx>=0; --idx) {
-        const TriangleHit triangleHit = TriangleHit(result.hits[idx].hit);
-        VertexData v = gScene.getVertexData(triangleHit);
-        v.posW = result.hits[idx].posW;
-
-        const float3 p2 = idx==0 ? origin : result.hits[idx-1].posW;
-        const float3 wo = normalize(p2 - v.posW);
-
-        forwardUnwindStep(triangleHit, v, wo, result.hits[idx].lobe, beam);
     }
 }
 
@@ -204,9 +191,7 @@ void evalEmissive(inout PLTSolve solveData,
 
 bool wasNEEAvailable(const int bounceIdx, const RayFlags pathFlags) {
     return
-        kDoNEE && bounceIdx>0 &&
-        (!pathFlags.lastBounceWasDelta ||
-         (kDoMSonNEE && pathFlags.MSCompatibleBounces<=kMNEEMaxMSOccluders && bounceIdx>1));
+        kDoNEE && bounceIdx>0 && !pathFlags.lastBounceWasDelta;
 }
 
 float MISWeight(float p0, float p1, float n0=1.f, float n1=1.f) {
@@ -253,9 +238,8 @@ void NEE(inout PLTSolve solveData,
          const BSDFProperties bsdfProp) {
     const uint lobes = bsdf.getLobes(sd);
 
-    const bool allowMSOnCurrentVertex = kDoMSonNEE && bounceIdx>0 && !bounce.flags.lastBounceWasDelta && bsdfProp.canManifoldWalkReflective;
     // NEE on non-delta lobes, or manifold walk on a delta lobe
-    const bool sampleReflection = (lobes & (uint)LobeType::NonDeltaReflection)!=0 || allowMSOnCurrentVertex;
+    const bool sampleReflection = (lobes & (uint)LobeType::NonDeltaReflection)!=0;
     const bool sampleTransmission = (lobes & (uint)LobeType::NonDeltaTransmission)!=0;
 
     if (!sampleReflection && !sampleTransmission)
@@ -277,10 +261,10 @@ void NEE(inout PLTSolve solveData,
     // Do we need to eval current vertex on forward unwind? (Manifold sampling might involve current vertex)
     bool evalCurrentVertex = true;
 
-    // Check visibility, or do MNEE
+    // Check visibility
     const int maxMSBounces = int(mMaxBounces)-bounceIdx;
     let visRayDesc = ls.getVisibilityRay();
-    if (!kDoMSonNEE || maxMSBounces<=0) {
+    if (!kDoNEE || maxMSBounces<=0) {
         if (!visibilityRay(visRayDesc))
             return;
 
@@ -288,76 +272,6 @@ void NEE(inout PLTSolve solveData,
         if (doMis) {
             const float bsdfPdf = bsdf.pdf(sd, ls.dir, ls.beam.wavelengths.x);
             ls.beam.scale(MISWeight(ls.pdf, bsdfPdf));
-        }
-    } else {
-        /** Manifold sampling on NEE
-        */
-
-        const float3 lightDir = -ls.beam.r;
-        float MISBsdfPdf;
-
-        ManifoldSampleData msresult = ManifoldSampleData(ls.beam.wavelengths.x);
-
-        // Are we doing MS on this vertex (e.g., delta lobe) as well? (Never on initial bounce)
-        const bool isReflection = dot(sd.N, lightDir)*dot(sd.N, sd.V) > .0f;
-        const bool currentVertexMS = isReflection && allowMSOnCurrentVertex;
-
-        if (currentVertexMS) {
-            if (!manifoldSampleVertex(bounce.hit, triangleHit, sd, bsdf, lightDir, solveData.sg, msresult) ||
-                (msresult.hits[0].lobe&(uint)LobeType::Reflection)==0)
-                return;
-        }
-
-        // Do MS
-        const float3 origin = !currentVertexMS ? V.posW : solveData.pathOrigin;
-        const bool mneeOk = manifoldNEESample(visRayDesc, origin,
-                            ls.beam.posW, lightDir, ls.beam.distant,
-                            maxMSBounces, solveData.sg,
-                            msresult);
-
-#if DO_DEBUG_VIEW==1
-        // MNEE debug views
-        writeDebugOutputCC(DebugViewType::mnee_iterations, solveData,
-                           msresult.iterations/float(kMNEEMaxIterations));
-        if (msresult.hitCount>0 && mneeOk)
-            writeDebugOutput(DebugViewType::mnee_bounces, solveData,
-                             msresult.hitCount==0 ? float3(.0f) :
-                             msresult.hitCount==1 ? float3(0,0.3,1) : float3(1,0,0));
-#endif
-
-        if (!mneeOk || msresult.pdf<1e-6f)
-            return;
-
-        // If hitcount is 0, then this is a simple NEE, otherwise need to evaluate the found connections.
-        if (msresult.hitCount > 0) {
-            // If the MS path is dispersive, reduce to single-wavelength beam
-            if (!mHWSSDoMIS && msresult.dispersive)
-                ls.beam.collapseToHeroWavelengthOnly();
-            if (!ls.beam.distant) {
-                ls.dir = msresult.woLastHitToLight;
-                // Rotate beam towards the new last interaction point
-                ls.beam.r = -msresult.woLastHitToLight;
-                ls.beam.t = perp_stark(ls.beam.r);
-            }
-
-            // MS pdf
-            ls.beam.scale(1.f / msresult.pdf);
-            // Evaluate MS path
-            manifoldForwardUnwind(msresult, origin, ls.beam);
-
-            // Special care when MS is done for this vertex
-            if (currentVertexMS) {
-                evalCurrentVertex = false;
-                MISBsdfPdf = bounce.lastNonDeltaPdf;
-            }
-        }
-
-        // MIS
-        if (doMis) {
-            // MIS BSDF pdf for MS that involves the current vertex was computed above
-            if (msresult.hitCount==0 || !currentVertexMS)
-                MISBsdfPdf = bsdf.pdf(sd, ls.dir, ls.beam.wavelengths.x);
-            ls.beam.scale(MISWeight(ls.pdf, MISBsdfPdf * msresult.pdf));
         }
     }
 
@@ -418,7 +332,8 @@ void main() {
     // Evaluate all bounces
     PLTSolve solveData = PLTSolve(sg, tilesg, samplingWavelength);
     for (int p=0;;++p) {
-        const BounceData bounce = readBounce(p, pixel);
+        Reservoir r = Reservoir::unpack(reservoirBuffer[pixel.x + pixel.y * 1920]);  // TODO: un-hardcode
+        const BounceData bounce = readBounce(p, pixel, 1920, r.pathInfo.isPrevBounceBuffer); // TODO: un-hardcode
 
         // Miss?
         if (bounce.flags.miss) {

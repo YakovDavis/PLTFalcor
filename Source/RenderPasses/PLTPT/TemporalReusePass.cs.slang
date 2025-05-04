@@ -36,8 +36,8 @@ struct TemporalReusePass
     Texture2D<float2> gMotionVectors; ///< 2D screen space motion vector.
     StructuredBuffer<PackedSurfaceData> gSurfaceData;   ///< Surface data for the current frame.
     StructuredBuffer<PackedSurfaceData> gPrevSurfaceData;   ///< Surface data for the previous frame.
-    RWStructuredBuffer<PackedReservoir> gPrevReservoirs; ///< Buffer with reservoirs from the previous frame.
-    StructuredBuffer<PackedReservoir> gReservoirs; ///< Buffer with reservoirs.
+    StructuredBuffer<PackedReservoir> gPrevReservoirs; ///< Buffer with reservoirs from the previous frame.
+    RWStructuredBuffer<PackedReservoir> gReservoirs; ///< Buffer with reservoirs.
 
     void execute(const uint2 pixel)
     {
@@ -93,7 +93,7 @@ struct TemporalReusePass
         }
 
         if (!neighborFound) {
-            gPrevReservoirs[bufferIndex] = currentReservoir.pack();
+            gReservoirs[bufferIndex] = currentReservoir.pack();
         }
 
         // Get index for the structured buffer access for the previous pixel.
@@ -107,15 +107,17 @@ struct TemporalReusePass
         prevReservoir.M = min(prevReservoir.M, kMCap);
 
         // Standard combination of multiple reservoirs (Algorithm 4 from the original paper):
-        float prevTargetPdf = luminance(prevReservoir.pathInfo.pdf); // TODO: PDF or weight?
+        float prevTargetPdf = prevReservoir.pathInfo.pdf; // TODO: PDF or weight?
         outputReservoir.update(prevReservoir, prevTargetPdf, sg);
 
-        float targetPdf = luminance(currentReservoir.pathInfo.pdf);  // TODO: PDF or weight?
-        outputReservoir.update(currentReservoir, targetPdf, sg);
+        float targetPdf = currentReservoir.pathInfo.pdf;  // TODO: PDF or weight?
+        bool currentChosen = outputReservoir.update(currentReservoir, targetPdf, sg);
+
+        outputReservoir.pathInfo.isPrevBounceBuffer = currentChosen ? 0 : 1;
 
         outputReservoir.W = outputReservoir.W  > 0.f ? outputReservoir.weightSum / (outputReservoir.M * outputReservoir.W) : 0.f;
         // Store combined reservoir.
-        gPrevReservoirs[bufferIndex] = outputReservoir.pack();
+        gReservoirs[bufferIndex] = outputReservoir.pack();
     }
 }
 

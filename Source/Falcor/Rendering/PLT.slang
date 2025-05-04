@@ -37,6 +37,11 @@ import Scene.ShadingData;
 import Rendering.Materials.PLT.Mueller;
 import Rendering.Materials.BSDFSample;
 
+struct PackedPLTCoherence {
+    // 4x4B
+    float3 D;
+    float r_m;
+};
 
 struct PLTCoherence {
     float3 D;     /// Diffusivity matrix
@@ -49,6 +54,22 @@ struct PLTCoherence {
     __init(float2x2 D, float r) {
         this.D = float3(D[0][0],D[0][1],D[1][1]);
         this.r_m = r;
+    }
+
+    PackedPLTCoherence pack() {
+        PackedPLTCoherence p;
+        p.D = this.D;
+        p.r_m = this.r_m;
+        return p;
+    }
+
+    static PLTCoherence unpack(const PackedPLTCoherence packedPltCoherence) {
+        PLTCoherence p;
+
+        p.D = packedPltCoherence.D;
+        p.r_m = packedPltCoherence.r_m;
+
+        return p;
     }
 
     float2x2 toDiffusivityMat() {
@@ -76,6 +97,28 @@ struct PLTCoherence {
         this.D = float3(newD[0][0],newD[0][1],newD[1][1]);
     }
 };
+
+struct PackedPLTBeam {
+    // 4x16B
+    hwss_t L = .0f;
+    hwss_t L1 = .0f,L2 = .0f,L3 = .0f;
+
+    // 2x16B
+    hwss_t wavelengths;
+    hwss_t spectralPDFs;
+
+    // 16B
+    PackedPLTCoherence Theta = { };
+
+    // 16x4B
+    float3 posW;
+    float3 r;
+    float3 t;
+    uint distant = false;
+    uint hwss_comps = hwss_samples;
+    uint _pad0 = 0;
+    uint _pad1 = 0;
+}
 
 // Units:
 // wavenumbers k in (um)^(-1)
@@ -112,6 +155,50 @@ struct PLTBeam {
         this.r = dir;
         this.t = tangent;
         this.distant = distant;
+    }
+
+    PackedPLTBeam pack() {
+        PackedPLTBeam b;
+
+        b.L = this.L;
+        b.L1 = this.L1;
+        b.L2 = this.L2;
+        b.L3 = this.L3;
+
+        b.wavelengths = this.wavelengths;
+        b.spectralPDFs = this.spectralPDFs;
+        b.hwss_comps = this.hwss_comps;
+
+        b.Theta = this.Theta.pack();
+
+        b.posW = this.posW;
+        b.r = this.r;
+        b.t = this.t;
+        b.distant = this.distant ? 1u : 0u;
+
+        return b;
+    }
+
+    static PLTBeam unpack(const PackedPLTBeam packedPltBeam) {
+        PLTBeam b;
+
+        b.L = packedPltBeam.L;
+        b.L1 = packedPltBeam.L1;
+        b.L2 = packedPltBeam.L2;
+        b.L3 = packedPltBeam.L3;
+
+        b.wavelengths = packedPltBeam.wavelengths;
+        b.spectralPDFs = packedPltBeam.spectralPDFs;
+        b.hwss_comps = packedPltBeam.hwss_comps;
+
+        b.Theta = PLTCoherence::unpack(packedPltBeam.Theta);
+
+        b.posW = packedPltBeam.posW;
+        b.r = packedPltBeam.r;
+        b.t = packedPltBeam.t;
+        b.distant = packedPltBeam.distant > 0u;
+
+        return p;
     }
 
     float4 getSP(int hwss_idx) {
