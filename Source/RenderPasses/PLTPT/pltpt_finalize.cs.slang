@@ -45,11 +45,14 @@ void forwardHWSSMis(const IMaterialInstance bsdf,
     }
 }
 
-void forwardUnwindStep(const TriangleHit triangleHit,
-                       const VertexData v,
-                       const float3 wo,
-                       const uint sampledBsdfLobe,
-                       inout PLTBeam beam) {
+// Unwind last step before measure
+void unwindLastStep(const BounceData bounce, const uint2 pixel, inout PLTBeam beam) {
+
+    const TriangleHit triangleHit = TriangleHit(bounce.hit);
+    const VertexData v = gScene.getVertexData(triangleHit);
+
+    const float3 wo = bounce.wi;
+
     let lod = ExplicitLodTextureSampler(0.f);
     const uint materialID = gScene.getMaterialID(triangleHit.instanceID);
     const ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -beam.r, lod);
@@ -59,38 +62,16 @@ void forwardUnwindStep(const TriangleHit triangleHit,
 
     // BSDF
     let bsdf = gScene.materials.getMaterialInstance(sd, lod);
-    bsdf.eval(sd, wo, sampledBsdfLobe, beam);
+    bsdf.eval(sd, wo, bounce.sampledBsdfLobe, beam);
 
     // Spectral MIS
-    forwardHWSSMis(bsdf, sd, wo, sampledBsdfLobe, beam);
-}
-
-// Replay path and evaluate contributions
-void forwardUnwind(const int bounceIdx, const uint2 pixel, inout PLTBeam beam) {
-    for (int p=bounceIdx-1; p>=0; --p) {
-        const BounceData bounce = readBounce(p, pixel, 1920); // TODO: un-hardcode
-
-        const TriangleHit triangleHit = TriangleHit(bounce.hit);
-        const VertexData v = gScene.getVertexData(triangleHit);
-
-        const float3 wo = bounce.wi;
-
-        forwardUnwindStep(triangleHit, v, wo, bounce.sampledBsdfLobe, beam);
-    }
+    forwardHWSSMis(bsdf, sd, wo, bounce.sampledBsdfLobe, beam);
 }
 
 // Measure beam at sensor
-void measure(inout PLTSolve solveData, const int bounceIdx, float pathContribution, inout PLTBeam beam) {
-    if (!kUseDirectLights && bounceIdx<=1)
-        return;
+float3 measure(float pathContribution, inout PLTBeam beam) {
 
     const float k = M_2PI / (1e-3f * beam.wavelengths.x);
-
-#if DO_DEBUG_VIEW==1
-    // Write coherence debug values before propagation to camera
-    writeDebugOutputCC2(DebugViewType::coherence_area, solveData, sqrt(beam.coherenceArea(k))/150.f);
-    writeDebugOutputCC(DebugViewType::coherence_anisotropy, solveData, beam.coherenceAnisotropy(k));
-#endif
 
     // Propagate to camera
     beam.propagate(gScene.camera.data.posW);
@@ -125,49 +106,30 @@ void measure(inout PLTSolve solveData, const int bounceIdx, float pathContributi
     const float3 Lrgb = max(float3(.0f), SpectrumUtils.spectrumToRgb(Li, beam.wavelengths, beam.hwss_comps) * pathContribution);
 
     if (all(isfinite(Lrgb)))
-        solveData.Lrgb += Lrgb;
-
-#if DO_DEBUG_VIEW==1
-    // Write debug views
-    markDebug(solveData, bounceIdx, beam);
-#endif
+        return Lrgb;
+    return float3(0.f);
 }
 
-float MISWeight(float p0, float p1, float n0=1.f, float n1=1.f) {
-    // Balance heuristic
-    float q0 = n0 * p0;
-    float q1 = n1 * p1;
-    return q0 / (q0 + q1);
-}
-
-void evalNEE(inout PLTSolve solveData,
-             const int bounceIdx,
-             const BounceData bounce,
-             const uint2 pixel,
-             const VertexData V,
-             const uint materialID,
-             const IMaterialInstance bsdf,
-             inout PLTBeam beam,
-             const bool NEEEvalCurrentVertex) {
-    if (NEEEvalCurrentVertex) {
-        let lod = ExplicitLodTextureSampler(0.f);
-        const ShadingData forwardSd = gScene.materials.prepareShadingData(V, materialID, -beam.r, lod);
-
-        // Propagate beam from source and evaluate non-delta BSDF interaction
-        beam.propagate(forwardSd.posW);
-        bsdf.eval(forwardSd, bounce.wi, (uint)LobeType::NonDelta, beam);
-
-        // Spectral MIS
-        forwardHWSSMis(bsdf, forwardSd, bounce.wi, (uint)LobeType::NonDelta, beam);
-    }
-
-    // Forward unwind beam
-    forwardUnwind(bounceIdx, pixel, beam);
-    measure(solveData, bounceIdx, bounce.pathContribution, beam);
-}
+uniform uint gMaxBeamCount;
+uniform uint2 gFrameDim;
 
 [numthreads(16, 16, 1)]
 void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
+    float3 finalColor = float3(0.f);
 
+    const uint2 pixel = dispatchThreadId.xy;
+    const uint beam0Idx = (pixel.x + (pixel.y * gFrameDim.x)) * gMaxBeamCount;
+
+    const uint reservoirIdx = pixel.y * gFrameDim.x + pixel.x;
+    const Reservoir reservoir = Reservoir::unpack(reservoirBuffer[reservoirIdx]);
+    const BounceData bounce = reservoir.bounceData;
+
+    for (int p = 0; p < gMaxBeamCount; ++p)
+    {
+        PLTBeam beam = PLTBeam::unpack(beamBuffer[beam0Idx + p]);
+        unwindLastStep(bounce, pixel, beam);
+        finalColor += measure(bounce.pathContribution, beam);
+    }
+    gOutputColor[pixel] = float4(finalColor, 1.f); // TODO: handle emissives
 }

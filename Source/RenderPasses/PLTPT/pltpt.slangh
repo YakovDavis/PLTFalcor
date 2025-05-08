@@ -136,7 +136,7 @@ RWStructuredBuffer<PackedPLTBeam> beamBuffer;
 RWStructuredBuffer<PackedReservoir> reservoirBuffer;
 
 // Read a bounce
-BounceData readBounce(int p, const uint2 pixel, const uint frameWidth) {
+BounceData readBounce(int p, const uint2 pixel) {
     const uint idx = ((pixel.x % mTileSize) + (pixel.y % mTileSize)*mTileSize)*(mMaxBounces+1) + p;
     return bounceBuffer[idx];
 }
@@ -171,7 +171,24 @@ void appendBounce(inout Path path, const float3 wi) {
     appendBounce(path, info, wi, 0);
 }
 
+PLTBeam readBeam(const int p, const uint2 pixel)
+{
+    const uint idx = (pixel.x + pixel.y * kOutputSize.x) * 4/*(TODO) mMaxBeamCount*/ + p;
+    return PLTBeam::unpack(beamBuffer[idx]);
+}
 
+bool appendBeam(const PackedPLTBeam beam, const uint2 pixel, inout Reservoir reservoir)
+{
+    const uint beamCount = reservoir.beamCount;
+
+    if (beamCount > 4/*(TODO) mMaxBeamCount*/)
+        return false;
+
+    const uint idx = (pixel.x + pixel.y * kOutputSize.x) * 4/*(TODO) mMaxBeamCount*/ + beamCount;
+    beamBuffer[idx] = beam;
+    reservoir.beamCount = beamCount + 1;
+    return true;
+}
 
 /** Russian Roulette */
 float RR(const float rrVal, const float rrE, const float sample) {

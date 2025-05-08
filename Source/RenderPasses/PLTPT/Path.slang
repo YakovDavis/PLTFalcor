@@ -43,7 +43,6 @@ import Utils.Math.MathHelpers;
 import Utils.Sampling.SampleGenerator;
 import Utils.Math.MathHelpers;
 
-
 struct RayFlags {
     enum class Flags {
         lastBounceWasDelta          = 0x1,

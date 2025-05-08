@@ -65,9 +65,9 @@ void forwardUnwindStep(const TriangleHit triangleHit,
     forwardHWSSMis(bsdf, sd, wo, sampledBsdfLobe, beam);
 }
 // Replay path and evaluate contributions
-void forwardUnwind(const int bounceIdx, const uint2 pixel, inout PLTBeam beam) {
-    for (int p=bounceIdx-1; p>=0; --p) {
-        const BounceData bounce = readBounce(p, pixel, 1920); // TODO: un-hardcode
+void forwardUnwind(const int bounceIdx, const uint2 pixel, inout PLTBeam beam, inout Reservoir reservoir) {
+    for (int p=bounceIdx-1; p>=1; --p) { // Everything but the last bounce
+        const BounceData bounce = readBounce(p, pixel);
 
         const TriangleHit triangleHit = TriangleHit(bounce.hit);
         const VertexData v = gScene.getVertexData(triangleHit);
@@ -76,8 +76,9 @@ void forwardUnwind(const int bounceIdx, const uint2 pixel, inout PLTBeam beam) {
 
         forwardUnwindStep(triangleHit, v, wo, bounce.sampledBsdfLobe, beam);
     }
+    appendBeam(beam.pack(), pixel, reservoir);
 }
-
+/*
 // Measure beam at sensor
 void measure(inout PLTSolve solveData, const int bounceIdx, float pathContribution, inout PLTBeam beam) {
     if (!kUseDirectLights && bounceIdx<=1)
@@ -131,7 +132,7 @@ void measure(inout PLTSolve solveData, const int bounceIdx, float pathContributi
     markDebug(solveData, bounceIdx, beam);
 #endif
 }
-
+*/
 
 /** Emissive contributions */
 
@@ -143,7 +144,8 @@ void evalEmissive(inout PLTSolve solveData,
                   const BSDFProperties bsdfProp,
                   const ShadingData sd,
                   const TriangleHit triangleHit,
-                  bool importanceSampleSpectrum) {
+                  bool importanceSampleSpectrum,
+                  inout Reservoir reservoir) {
     // Emissive geometry
     // Only direct-sample lights if we do not use MIS or no NEE was performed
     const bool didNEE = wasNEEAvailable(bounceIdx, bounce.flags);
@@ -179,8 +181,8 @@ void evalEmissive(inout PLTSolve solveData,
             if (!mHWSSDoMIS && bounce.flags.dispersiveDeltaSegment)
                 beam.collapseToHeroWavelengthOnly();
 
-            forwardUnwind(bounceIdx, pixel, beam);
-            measure(solveData, bounceIdx, bounce.pathContribution, beam);
+            forwardUnwind(bounceIdx, pixel, beam, reservoir);
+            //measure(solveData, bounceIdx, bounce.pathContribution, beam);
         }
     }
 }
@@ -208,7 +210,8 @@ void evalNEE(inout PLTSolve solveData,
              const uint materialID,
              const IMaterialInstance bsdf,
              inout PLTBeam beam,
-             const bool NEEEvalCurrentVertex) {
+             const bool NEEEvalCurrentVertex,
+             inout Reservoir reservoir) {
     if (NEEEvalCurrentVertex) {
         let lod = ExplicitLodTextureSampler(0.f);
         const ShadingData forwardSd = gScene.materials.prepareShadingData(V, materialID, -beam.r, lod);
@@ -222,8 +225,8 @@ void evalNEE(inout PLTSolve solveData,
     }
 
     // Forward unwind beam
-    forwardUnwind(bounceIdx, pixel, beam);
-    measure(solveData, bounceIdx, bounce.pathContribution, beam);
+    forwardUnwind(bounceIdx, pixel, beam, reservoir);
+    //measure(solveData, bounceIdx, bounce.pathContribution, beam);
 }
 
 void NEE(inout PLTSolve solveData,
@@ -234,7 +237,8 @@ void NEE(inout PLTSolve solveData,
          const ShadingData sd,
          const VertexData V,
          const IMaterialInstance bsdf,
-         const BSDFProperties bsdfProp) {
+         const BSDFProperties bsdfProp,
+         inout Reservoir reservoir) {
     const uint lobes = bsdf.getLobes(sd);
 
     // NEE on non-delta lobes, or manifold walk on a delta lobe
@@ -275,7 +279,7 @@ void NEE(inout PLTSolve solveData,
     }
 
     // Finally, evaluate NEE contributions
-    evalNEE(solveData, bounceIdx, bounce, pixel, V, sd.materialID, bsdf, ls.beam, evalCurrentVertex);
+    evalNEE(solveData, bounceIdx, bounce, pixel, V, sd.materialID, bsdf, ls.beam, evalCurrentVertex, reservoir);
 }
 
 
@@ -284,7 +288,8 @@ void NEE(inout PLTSolve solveData,
 void onMiss(inout PLTSolve solveData,
             const int bounceIdx,
             const BounceData bounce,
-            const uint2 pixel) {
+            const uint2 pixel,
+            inout Reservoir reservoir) {
     const float3 wo = bounce.wi;
     // Only direct-sample lights if we do not use MIS or no NEE was performed
     const bool didNEE = wasNEEAvailable(bounceIdx, bounce.flags);
@@ -303,8 +308,8 @@ void onMiss(inout PLTSolve solveData,
             beam.collapseToHeroWavelengthOnly();
 
         // Forward unwind beam
-        forwardUnwind(bounceIdx, pixel, beam);
-        measure(solveData, bounceIdx, bounce.pathContribution, beam);
+        forwardUnwind(bounceIdx, pixel, beam, reservoir);
+        //measure(solveData, bounceIdx, bounce.pathContribution, beam);
     }
 }
 
@@ -326,15 +331,21 @@ void main() {
     // First we do with the SG is draw the sampling wavelength, as we require it to be the same between sample and solve pass.
     const float samplingWavelength = SpectrumSampler.sampleOne(sampleNext1D(sg));
 
+    Reservoir reservoir = {};
 
     // Evaluate all bounces
     PLTSolve solveData = PLTSolve(sg, tilesg, samplingWavelength);
     for (int p=0;;++p) {
-        const BounceData bounce = readBounce(p, pixel, frameDim.x);
+        const BounceData bounce = readBounce(p, pixel);
+
+        // Record first bounce data
+        if (p == 0) {
+            reservoir.bounceData = bounce;
+        }
 
         // Miss?
         if (bounce.flags.miss) {
-            onMiss(solveData, p, bounce, pixel);
+            onMiss(solveData, p, bounce, pixel, reservoir);
             break;
         }
 
@@ -350,12 +361,12 @@ void main() {
 
         // NEE
         if (kDoNEE) {
-            NEE(solveData, p, bounce, pixel, triangleHit, sd, v, bsdf, bsdfProp);
+            NEE(solveData, p, bounce, pixel, triangleHit, sd, v, bsdf, bsdfProp, reservoir);
         }
 
         // Emissive material?
         const bool importanceSampleSpectrum = kImportanceSampleEmissiveSpectra;
-        evalEmissive(solveData, p, bounce, pixel, bsdf, bsdfProp, sd, triangleHit, importanceSampleSpectrum);
+        evalEmissive(solveData, p, bounce, pixel, bsdf, bsdfProp, sd, triangleHit, importanceSampleSpectrum, reservoir);
 
 
         // Geometry debug info
@@ -375,12 +386,10 @@ void main() {
         solveData.pathNormal = sd.N;
     }
 
-    PLTBeam sample = {};
-    Reservoir reservoir = {};
-    solveData;
+    const uint reservoirIdx = pixel.x + pixel.y * kOutputSize.x;
+    reservoirBuffer[reservoirIdx] = reservoir.pack();
 
-
-    gOutputColor[pixel] = float4(solveData.Lrgb, 1.f);
+    //gOutputColor[pixel] = float4(solveData.Lrgb, 1.f);
 
 
 #if DO_DEBUG_VIEW==1

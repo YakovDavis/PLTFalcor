@@ -79,10 +79,10 @@ struct PLTCoherence {
 // 160 bytes
 struct PackedPLTBeam {
     // 4x16B
-    uint4 L = .0f;
-    uint4 L1 = .0f;
-    uint4 L2 = .0f;
-    uint4 L3 = .0f;
+    uint4 L;
+    uint4 L1;
+    uint4 L2;
+    uint4 L3;
 
     // 2x16B
     uint4 wavelengths;
@@ -135,7 +135,7 @@ struct PLTBeam {
     }
 
     PackedPLTBeam pack() {
-        PackedPLTBeam b;
+        PackedPLTBeam b = {};
 
         b.L = uint4(asuint(this.L[0]), asuint(this.L[1]), asuint(this.L[2]), asuint(this.L[3]));
         b.L1 = uint4(asuint(this.L1[0]), asuint(this.L1[1]), asuint(this.L1[2]), asuint(this.L1[3]));
@@ -148,6 +148,7 @@ struct PLTBeam {
         b.packedTheta = uint4(asuint(this.Theta.D.x), asuint(this.Theta.D.y), asuint(this.Theta.D.z), asuint(this.Theta.r_m));
 
         b.r_hwss_comps = uint4(asuint(this.r.x), asuint(this.r.y), asuint(this.r.z), this.hwss_comps);
+        b.posW_distant = uint4(asuint(this.posW.x), asuint(this.posW.y), asuint(this.posW.z), this.distant ? 1u :0u);
         b.t = uint4(asuint(this.t.x), asuint(this.t.y), asuint(this.t.z), 0u);
 
         return b;

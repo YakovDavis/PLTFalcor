@@ -59,7 +59,7 @@ namespace {
     static constexpr uint32_t kShadowPayloadSizeBytes = 20u;
     static constexpr uint32_t kPerBouncePayloadSizeBytes = 40u;
     static constexpr uint32_t kPerBeamPayloadSizeBytes = 160u;
-    static constexpr uint32_t kReservoirPayloadSizeBytes = 8u;
+    static constexpr uint32_t kReservoirPayloadSizeBytes = 56u;
     static constexpr uint32_t kMaxRecursionDepth = 1u;
 
     static constexpr uint kVisibilityRayId = 0;
@@ -447,7 +447,7 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
 
         var["bounceBuffer"] = mpBounceBuffer;
         var["reservoirBuffer"] = mpReservoirBuffers[mReservoirBufferIndex];
-        //var["beamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
+        var["beamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
     };
 
     varSetter(mSampleTracer.pVars->getRootVar());
@@ -478,7 +478,7 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
         mpScene->raytrace(pRenderContext, mSolveTracer.pProgram.get(),  mSolveTracer.pVars,  { mTileSize, mTileSize, 1 });
     }
 
-    temporalReusePass(pRenderContext, renderData);
+    //temporalReusePass(pRenderContext, renderData);
 
     finalizePass(pRenderContext, renderData);
 
@@ -679,18 +679,17 @@ void PLTPT::finalizePass(RenderContext* pRenderContext, const RenderData& render
     const uint2& targetDim = renderData.getDefaultTextureDims();
 
     // Bind resources.
-    /*auto var = mpTemporalReusePass->getRootVar()["CB"]["gTemporalReusePass"];
+    auto var = mpFinalizePass->getRootVar();
 
     var["gFrameDim"] = targetDim;
-    var["gFrameCount"] = mFrameCount;
+    //var["gFrameCount"] = mFrameCount;
 
-    var["gMotionVectors"] = renderData.getTexture(kInputMotionVectors);
-    var["gReservoirs"] = mpReservoirBuffers[mReservoirBufferIndex];
-    var["gSurfaceData"] = mpSurfaceData[mReservoirBufferIndex];
+    var["gMaxBeamCount"] = mMaxBeams;
 
-    var["gPrevSurfaceData"] = mpSurfaceData[(mReservoirBufferIndex + 1) % 2];
-    var["gPrevReservoirs"] = mpReservoirBuffers[(mReservoirBufferIndex + 1) % 2];
-    //var["gDebug"] = renderData.getTexture(kDebug);*/
+    var["gOutputColor"] = renderData.getTexture("color");
+
+    var["reservoirBuffer"] = mpReservoirBuffers[mReservoirBufferIndex];
+    var["beamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
 
     mpFinalizePass["gScene"] = mpScene->getParameterBlock();
 
