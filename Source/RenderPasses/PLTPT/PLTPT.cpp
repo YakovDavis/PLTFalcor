@@ -48,6 +48,7 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 namespace {
     const std::string kSamplePassFileName   = "RenderPasses/PLTPT/pltpt_sample.rt.slang";
     const std::string kSolvePassFileName    = "RenderPasses/PLTPT/pltpt_solve.rt.slang";
+    const std::string kFinalizePassFileName    = "RenderPasses/PLTPT/pltpt_finalize.cs.slang";
     const std::string kLoadSurfaceDataPassFilename = "RenderPasses/PLTPT/LoadSurfaceDataPass.cs.slang";
     const std::string kTemporalReusePassFilename = "RenderPasses/PLTPT/TemporalReusePass.cs.slang";
 
@@ -57,7 +58,8 @@ namespace {
     static constexpr uint32_t kBasePayloadSizeBytes = 84u;
     static constexpr uint32_t kShadowPayloadSizeBytes = 20u;
     static constexpr uint32_t kPerBouncePayloadSizeBytes = 40u;
-    static constexpr uint32_t kReservoirPayloadSizeBytes = 40u;
+    static constexpr uint32_t kPerBeamPayloadSizeBytes = 160u;
+    static constexpr uint32_t kReservoirPayloadSizeBytes = 8u;
     static constexpr uint32_t kMaxRecursionDepth = 1u;
 
     static constexpr uint kVisibilityRayId = 0;
@@ -352,7 +354,7 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
         mOptionsChanged = false;
     }
 
-    if (mpBounceBuffers.empty())
+    if (!mpBounceBuffer)
     {
         createBuffers(pRenderContext, renderData);
     }
@@ -443,9 +445,9 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
         if (mDebugView != 0)
             var["CB"]["kDebugViewIntensity"] = mDebugViewIntensity;
 
-        var["bounceBuffer"] = mpBounceBuffers[mBounceBufferIndex];
-        var["prevBounceBuffer"] = mpBounceBuffers[(mBounceBufferIndex + 1) % mBounceBufferCount];
-        var["reservoirBuffer"] = mpReservoirBuffers[mBounceBufferIndex];
+        var["bounceBuffer"] = mpBounceBuffer;
+        var["reservoirBuffer"] = mpReservoirBuffers[mReservoirBufferIndex];
+        //var["beamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
     };
 
     varSetter(mSampleTracer.pVars->getRootVar());
@@ -470,22 +472,17 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
     for (uint x=0;x<tiles.x;++x)
     for (uint y=0;y<tiles.y;++y) {
         mSampleTracer.pVars->getRootVar()["CB"]["kTile"] = uint2(x,y);
-        //mSolveTracer.pVars->getRootVar()["CB"]["kTile"] = uint2(x,y);
+        mSolveTracer.pVars->getRootVar()["CB"]["kTile"] = uint2(x,y);
 
         mpScene->raytrace(pRenderContext, mSampleTracer.pProgram.get(), mSampleTracer.pVars, { mTileSize, mTileSize, 1 });
-        //mpScene->raytrace(pRenderContext, mSolveTracer.pProgram.get(),  mSolveTracer.pVars,  { mTileSize, mTileSize, 1 });
+        mpScene->raytrace(pRenderContext, mSolveTracer.pProgram.get(),  mSolveTracer.pVars,  { mTileSize, mTileSize, 1 });
     }
 
     temporalReusePass(pRenderContext, renderData);
 
-    for (uint x=0;x<tiles.x;++x)
-    for (uint y=0;y<tiles.y;++y) {
-        mSolveTracer.pVars->getRootVar()["CB"]["kTile"] = uint2(x,y);
+    finalizePass(pRenderContext, renderData);
 
-        mpScene->raytrace(pRenderContext, mSolveTracer.pProgram.get(),  mSolveTracer.pVars,  { mTileSize, mTileSize, 1 });
-    }
-
-    mBounceBufferIndex = (mBounceBufferIndex + 1) % mBounceBufferCount;
+    mReservoirBufferIndex = (mReservoirBufferIndex + 1) % 2;
     mFrameCount++;
 }
 
@@ -555,6 +552,13 @@ void PLTPT::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pSce
         loadSurfaceDataDesc.setShaderModel(kShaderModel);
         loadSurfaceDataDesc.addShaderLibrary(kLoadSurfaceDataPassFilename).csEntry("main");
         mpLoadSurfaceDataPass = ComputePass::create(mpDevice, loadSurfaceDataDesc, mpScene->getSceneDefines());
+
+        Program::Desc finalizePassDesc;
+        finalizePassDesc.addShaderModules(pScene->getShaderModules());
+        finalizePassDesc.addTypeConformances(globalTypeConformances);
+        finalizePassDesc.setShaderModel(kShaderModel);
+        finalizePassDesc.addShaderLibrary(kFinalizePassFileName).csEntry("main");
+        mpFinalizePass = ComputePass::create(mpDevice, finalizePassDesc, mpScene->getSceneDefines());
     }
 }
 
@@ -584,18 +588,25 @@ void PLTPT::createBuffers(RenderContext* pRenderContext, const RenderData& rende
     const uint2& targetDim = renderData.getDefaultTextureDims();
     const auto pixelCount = (uint32_t)(targetDim.x * targetDim.y);
 
-    const auto bounceBufferElements = (mMaxBounces+1u) * pixelCount;
+    const auto bounceBufferElements = (mMaxBounces+1u) * (mTileSize * mTileSize);
+    const auto beamBufferElements = mMaxBeams * pixelCount;
 
-    mpBounceBuffers.clear();
+    mpBounceBuffer = nullptr;
     mpReservoirBuffers.clear();
     mpSurfaceData.clear();
-    for (uint i = 0; i < mBounceBufferCount; ++i)
+    for (uint i = 0; i < 2; ++i)
     {
-        mpBounceBuffers.push_back(Buffer::createStructured(
+        mpBounceBuffer = Buffer::createStructured(
             this->mpDevice.get(), kPerBouncePayloadSizeBytes, (uint32_t)bounceBufferElements,
             Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
+        );
+        mpBounceBuffer->setName("PLTPT::mpBounceBuffer_" + std::to_string(i));
+
+        mpBeamBuffers.push_back(Buffer::createStructured(
+            this->mpDevice.get(), kPerBeamPayloadSizeBytes, (uint32_t)beamBufferElements,
+            Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
         ));
-        mpBounceBuffers[i]->setName("PLTPT::mpBounceBuffer_" + std::to_string(i));
+        mpBeamBuffers[i]->setName("PLTPT::mpBeamBuffer_" + std::to_string(i));
 
         mpReservoirBuffers.push_back(Buffer::createStructured(
             this->mpDevice.get(), kReservoirPayloadSizeBytes, pixelCount,
@@ -629,8 +640,8 @@ void PLTPT::loadSurfaceDataPass(RenderContext* pRenderContext, const RenderData&
     var["gFrameCount"] = mFrameCount;
 
     var["gVBuffer"] = renderData.getTexture(kInputVBuffer);
-    var["gSurfaceData"] = mpSurfaceData[mBounceBufferIndex];
-    var["gNormalDepth"] = mpNormalDepth[mBounceBufferIndex];
+    var["gSurfaceData"] = mpSurfaceData[mReservoirBufferIndex];
+    var["gNormalDepth"] = mpNormalDepth[mReservoirBufferIndex];
 
     mpLoadSurfaceDataPass["gScene"] = mpScene->getParameterBlock();
     mpLoadSurfaceDataPass->execute(pRenderContext, { targetDim, 1u });
@@ -649,14 +660,39 @@ void PLTPT::temporalReusePass(RenderContext* pRenderContext, const RenderData& r
     var["gFrameCount"] = mFrameCount;
 
     var["gMotionVectors"] = renderData.getTexture(kInputMotionVectors);
-    var["gReservoirs"] = mpReservoirBuffers[mBounceBufferIndex];
-    var["gSurfaceData"] = mpSurfaceData[mBounceBufferIndex];
+    var["gReservoirs"] = mpReservoirBuffers[mReservoirBufferIndex];
+    var["gSurfaceData"] = mpSurfaceData[mReservoirBufferIndex];
 
-    var["gPrevSurfaceData"] = mpSurfaceData[(mBounceBufferIndex + 1) % mBounceBufferCount];
-    var["gPrevReservoirs"] = mpReservoirBuffers[(mBounceBufferIndex + 1) % mBounceBufferCount];
+    var["gPrevSurfaceData"] = mpSurfaceData[(mReservoirBufferIndex + 1) % 2];
+    var["gPrevReservoirs"] = mpReservoirBuffers[(mReservoirBufferIndex + 1) % 2];
     //var["gDebug"] = renderData.getTexture(kDebug);
 
     mpTemporalReusePass["gScene"] = mpScene->getParameterBlock();
 
     mpTemporalReusePass->execute(pRenderContext, { targetDim, 1u });
+}
+
+void PLTPT::finalizePass(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    FALCOR_PROFILE(pRenderContext, "PLTPT::finalizePass");
+
+    const uint2& targetDim = renderData.getDefaultTextureDims();
+
+    // Bind resources.
+    /*auto var = mpTemporalReusePass->getRootVar()["CB"]["gTemporalReusePass"];
+
+    var["gFrameDim"] = targetDim;
+    var["gFrameCount"] = mFrameCount;
+
+    var["gMotionVectors"] = renderData.getTexture(kInputMotionVectors);
+    var["gReservoirs"] = mpReservoirBuffers[mReservoirBufferIndex];
+    var["gSurfaceData"] = mpSurfaceData[mReservoirBufferIndex];
+
+    var["gPrevSurfaceData"] = mpSurfaceData[(mReservoirBufferIndex + 1) % 2];
+    var["gPrevReservoirs"] = mpReservoirBuffers[(mReservoirBufferIndex + 1) % 2];
+    //var["gDebug"] = renderData.getTexture(kDebug);*/
+
+    mpFinalizePass["gScene"] = mpScene->getParameterBlock();
+
+    mpFinalizePass->execute(pRenderContext, { targetDim, 1u });
 }

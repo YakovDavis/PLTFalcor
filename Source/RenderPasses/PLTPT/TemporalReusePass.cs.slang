@@ -107,13 +107,13 @@ struct TemporalReusePass
         prevReservoir.M = min(prevReservoir.M, kMCap);
 
         // Standard combination of multiple reservoirs (Algorithm 4 from the original paper):
-        float prevTargetPdf = prevReservoir.pathInfo.pdf; // TODO: PDF or weight?
+        float prevTargetPdf = 0; // prevReservoir.pltBeam.L;
         outputReservoir.update(prevReservoir, prevTargetPdf, sg);
 
-        float targetPdf = currentReservoir.pathInfo.pdf;  // TODO: PDF or weight?
+        float targetPdf = 0; // currentReservoir.pltBeam.L;
         bool currentChosen = outputReservoir.update(currentReservoir, targetPdf, sg);
 
-        outputReservoir.pathInfo.isPrevBounceBuffer = currentChosen ? 0 : 1;
+        //outputReservoir.pathInfo.isPrevBounceBuffer = currentChosen ? 0 : 1;
 
         outputReservoir.W = outputReservoir.W  > 0.f ? outputReservoir.weightSum / (outputReservoir.M * outputReservoir.W) : 0.f;
         // Store combined reservoir.

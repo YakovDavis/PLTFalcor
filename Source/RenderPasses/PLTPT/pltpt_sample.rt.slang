@@ -52,27 +52,12 @@ bool pltSampleBSDF<S: ISampleGenerator>(const ShadingData sd,
     return true;
 }
 
-void RecordPathInfoToReservoir(inout Reservoir reservoir, bool valid, const Path path)
-{
-    reservoir.pathInfo.wavelength = path.wavelength;
-    reservoir.pathInfo.weight = path.weight;
-    reservoir.pathInfo.pdf = path.pdf;
-    reservoir.pathInfo.valid = valid ? 1u : 0u;
-    reservoir.pathInfo.id = path.id;
-    reservoir.pathInfo.frameCount = gFrameCount;
-    reservoir.M += 1;
-}
-
 [shader("miss")]
 void scatterMiss(inout Path path) {
     const float3 wi = -path.dir;
 
     path.flagMiss();
     appendBounce(path, wi);
-    Reservoir r;
-    RecordPathInfoToReservoir(r, true, path);
-    const uint2 pixel = path.getPixel();
-    reservoirBuffer[pixel.x + pixel.y * 1920] = r.pack(); // TODO: un-hardcode
 }
 
 [shader("closesthit")]
@@ -130,10 +115,6 @@ void scatterTriangleMeshClosestHit(inout Path path, BuiltInTriangleIntersectionA
         // Terminate path
         path.endPath();
         appendBounce(path, hitInfo, wi);
-        Reservoir r;
-        RecordPathInfoToReservoir(r, true, path);
-        const uint2 pixel = path.getPixel();
-        reservoirBuffer[pixel.x + pixel.y * 1920] = r.pack(); // TODO: un-hardcode
         return;
     }
 

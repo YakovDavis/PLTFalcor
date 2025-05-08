@@ -7,6 +7,7 @@ target_sources(PLTPT PRIVATE
     pltpt.slangh
     pltpt_sample.rt.slang
     pltpt_solve.rt.slang
+    pltpt_finalize.cs.slang
     Path.slang
     pltpt_constants.slangh
 

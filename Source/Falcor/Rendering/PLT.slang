@@ -37,12 +37,6 @@ import Scene.ShadingData;
 import Rendering.Materials.PLT.Mueller;
 import Rendering.Materials.BSDFSample;
 
-struct PackedPLTCoherence {
-    // 4x4B
-    float3 D;
-    float r_m;
-};
-
 struct PLTCoherence {
     float3 D;     /// Diffusivity matrix
     float r_m;    /// Distance traveled from source (m)
@@ -54,22 +48,6 @@ struct PLTCoherence {
     __init(float2x2 D, float r) {
         this.D = float3(D[0][0],D[0][1],D[1][1]);
         this.r_m = r;
-    }
-
-    PackedPLTCoherence pack() {
-        PackedPLTCoherence p;
-        p.D = this.D;
-        p.r_m = this.r_m;
-        return p;
-    }
-
-    static PLTCoherence unpack(const PackedPLTCoherence packedPltCoherence) {
-        PLTCoherence p;
-
-        p.D = packedPltCoherence.D;
-        p.r_m = packedPltCoherence.r_m;
-
-        return p;
     }
 
     float2x2 toDiffusivityMat() {
@@ -98,26 +76,25 @@ struct PLTCoherence {
     }
 };
 
+// 160 bytes
 struct PackedPLTBeam {
     // 4x16B
-    hwss_t L = .0f;
-    hwss_t L1 = .0f,L2 = .0f,L3 = .0f;
+    uint4 L = .0f;
+    uint4 L1 = .0f;
+    uint4 L2 = .0f;
+    uint4 L3 = .0f;
 
     // 2x16B
-    hwss_t wavelengths;
-    hwss_t spectralPDFs;
+    uint4 wavelengths;
+    uint4 spectralPDFs;
 
     // 16B
-    PackedPLTCoherence Theta = { };
+    uint4 packedTheta;
 
-    // 16x4B
-    float3 posW;
-    float3 r;
-    float3 t;
-    uint distant = false;
-    uint hwss_comps = hwss_samples;
-    uint _pad0 = 0;
-    uint _pad1 = 0;
+    // 3x16B
+    uint4 posW_distant;
+    uint4 r_hwss_comps;
+    uint4 t;
 }
 
 // Units:
@@ -160,21 +137,18 @@ struct PLTBeam {
     PackedPLTBeam pack() {
         PackedPLTBeam b;
 
-        b.L = this.L;
-        b.L1 = this.L1;
-        b.L2 = this.L2;
-        b.L3 = this.L3;
+        b.L = uint4(asuint(this.L[0]), asuint(this.L[1]), asuint(this.L[2]), asuint(this.L[3]));
+        b.L1 = uint4(asuint(this.L1[0]), asuint(this.L1[1]), asuint(this.L1[2]), asuint(this.L1[3]));
+        b.L2 = uint4(asuint(this.L2[0]), asuint(this.L2[1]), asuint(this.L2[2]), asuint(this.L2[3]));
+        b.L3 = uint4(asuint(this.L3[0]), asuint(this.L3[1]), asuint(this.L3[2]), asuint(this.L3[3]));
 
-        b.wavelengths = this.wavelengths;
-        b.spectralPDFs = this.spectralPDFs;
-        b.hwss_comps = this.hwss_comps;
+        b.wavelengths = uint4(asuint(this.wavelengths[0]), asuint(this.wavelengths[1]), asuint(this.wavelengths[2]), asuint(this.wavelengths[3]));
+        b.spectralPDFs = uint4(asuint(this.spectralPDFs[0]), asuint(this.spectralPDFs[1]), asuint(this.spectralPDFs[2]), asuint(this.spectralPDFs[3]));
 
-        b.Theta = this.Theta.pack();
+        b.packedTheta = uint4(asuint(this.Theta.D.x), asuint(this.Theta.D.y), asuint(this.Theta.D.z), asuint(this.Theta.r_m));
 
-        b.posW = this.posW;
-        b.r = this.r;
-        b.t = this.t;
-        b.distant = this.distant ? 1u : 0u;
+        b.r_hwss_comps = uint4(asuint(this.r.x), asuint(this.r.y), asuint(this.r.z), this.hwss_comps);
+        b.t = uint4(asuint(this.t.x), asuint(this.t.y), asuint(this.t.z), 0u);
 
         return b;
     }
@@ -182,23 +156,30 @@ struct PLTBeam {
     static PLTBeam unpack(const PackedPLTBeam packedPltBeam) {
         PLTBeam b;
 
-        b.L = packedPltBeam.L;
-        b.L1 = packedPltBeam.L1;
-        b.L2 = packedPltBeam.L2;
-        b.L3 = packedPltBeam.L3;
+        b.L = hwss_t(0.f);
+        b.L[0] = asfloat(packedPltBeam.L.x); b.L[1] = asfloat(packedPltBeam.L.y); b.L[2] = asfloat(packedPltBeam.L.z); b.L[3] = asfloat(packedPltBeam.L.w);
+        b.L1 = hwss_t(0.f);
+        b.L1[0] = asfloat(packedPltBeam.L1.x); b.L1[1] = asfloat(packedPltBeam.L1.y); b.L1[2] = asfloat(packedPltBeam.L1.z); b.L1[3] = asfloat(packedPltBeam.L1.w);
+        b.L2 = hwss_t(0.f);
+        b.L2[0] = asfloat(packedPltBeam.L2.x); b.L2[1] = asfloat(packedPltBeam.L2.y); b.L2[2] = asfloat(packedPltBeam.L2.z); b.L2[3] = asfloat(packedPltBeam.L2.w);
+        b.L3 = hwss_t(0.f);
+        b.L3[0] = asfloat(packedPltBeam.L3.x); b.L3[1] = asfloat(packedPltBeam.L3.y); b.L3[2] = asfloat(packedPltBeam.L3.z); b.L3[3] = asfloat(packedPltBeam.L3.w);
 
-        b.wavelengths = packedPltBeam.wavelengths;
-        b.spectralPDFs = packedPltBeam.spectralPDFs;
-        b.hwss_comps = packedPltBeam.hwss_comps;
+        b.wavelengths = hwss_t(0.f);
+        b.wavelengths[0] = asfloat(packedPltBeam.wavelengths.x); b.wavelengths[1] = asfloat(packedPltBeam.wavelengths.y); b.wavelengths[2] = asfloat(packedPltBeam.wavelengths.z); b.wavelengths[3] = asfloat(packedPltBeam.wavelengths.w);
+        b.spectralPDFs = hwss_t(0.f);
+        b.spectralPDFs[0] = asfloat(packedPltBeam.spectralPDFs.x); b.spectralPDFs[1] = asfloat(packedPltBeam.spectralPDFs.y); b.spectralPDFs[2] = asfloat(packedPltBeam.spectralPDFs.z); b.spectralPDFs[3] = asfloat(packedPltBeam.spectralPDFs.w);
 
-        b.Theta = PLTCoherence::unpack(packedPltBeam.Theta);
+        b.Theta.D = asfloat(packedPltBeam.packedTheta.xyz);
+        b.Theta.r_m = asfloat(packedPltBeam.packedTheta.w);
 
-        b.posW = packedPltBeam.posW;
-        b.r = packedPltBeam.r;
-        b.t = packedPltBeam.t;
-        b.distant = packedPltBeam.distant > 0u;
+        b.posW = asfloat(packedPltBeam.posW_distant.xyz);
+        b.hwss_comps = packedPltBeam.r_hwss_comps.w > 0u;
+        b.r = asfloat(packedPltBeam.r_hwss_comps.xyz);
+        b.t = asfloat(packedPltBeam.t.xyz);
+        b.distant = packedPltBeam.posW_distant.w > 0u;
 
-        return p;
+        return b;
     }
 
     float4 getSP(int hwss_idx) {

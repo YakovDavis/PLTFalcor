@@ -67,8 +67,7 @@ void forwardUnwindStep(const TriangleHit triangleHit,
 // Replay path and evaluate contributions
 void forwardUnwind(const int bounceIdx, const uint2 pixel, inout PLTBeam beam) {
     for (int p=bounceIdx-1; p>=0; --p) {
-        Reservoir r = Reservoir::unpack(reservoirBuffer[pixel.x + pixel.y * 1920]);  // TODO: un-hardcode
-        const BounceData bounce = readBounce(p, pixel, 1920, r.pathInfo.isPrevBounceBuffer); // TODO: un-hardcode
+        const BounceData bounce = readBounce(p, pixel, 1920); // TODO: un-hardcode
 
         const TriangleHit triangleHit = TriangleHit(bounce.hit);
         const VertexData v = gScene.getVertexData(triangleHit);
@@ -320,7 +319,6 @@ void main() {
     if (any(pixel>=frameDim))
         return;
 
-
     SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
     // To reduce divergence, we use an SG with a per-tile seed for NEE
     SampleGenerator tilesg = SampleGenerator(kTile, gFrameCount<<2);
@@ -332,8 +330,7 @@ void main() {
     // Evaluate all bounces
     PLTSolve solveData = PLTSolve(sg, tilesg, samplingWavelength);
     for (int p=0;;++p) {
-        Reservoir r = Reservoir::unpack(reservoirBuffer[pixel.x + pixel.y * 1920]);  // TODO: un-hardcode
-        const BounceData bounce = readBounce(p, pixel, 1920, r.pathInfo.isPrevBounceBuffer); // TODO: un-hardcode
+        const BounceData bounce = readBounce(p, pixel, frameDim.x);
 
         // Miss?
         if (bounce.flags.miss) {
@@ -377,6 +374,10 @@ void main() {
         solveData.pathOrigin = v.posW;
         solveData.pathNormal = sd.N;
     }
+
+    PLTBeam sample = {};
+    Reservoir reservoir = {};
+    solveData;
 
 
     gOutputColor[pixel] = float4(solveData.Lrgb, 1.f);

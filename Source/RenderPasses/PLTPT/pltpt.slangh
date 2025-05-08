@@ -129,20 +129,15 @@ static const bool kForceFullyCoherent = false;
 /** Bounce storage */
 
 RWStructuredBuffer<BounceData> bounceBuffer;
-StructuredBuffer<BounceData> prevBounceBuffer;
 
 /** Reservoir storage */
 
+RWStructuredBuffer<PackedPLTBeam> beamBuffer;
 RWStructuredBuffer<PackedReservoir> reservoirBuffer;
 
 // Read a bounce
-BounceData readBounce(int p, const uint2 pixel, const uint frameWidth, bool isPrevBuffer) {
-    //const uint idx = ((pixel.x % mTileSize) + (pixel.y % mTileSize)*mTileSize)*(mMaxBounces+1) + p;
-    const uint idx = (pixel.x + pixel.y * frameWidth) * (mMaxBounces + 1) + p;
-    if (isPrevBuffer)
-    {
-        return prevBounceBuffer[idx];
-    }
+BounceData readBounce(int p, const uint2 pixel, const uint frameWidth) {
+    const uint idx = ((pixel.x % mTileSize) + (pixel.y % mTileSize)*mTileSize)*(mMaxBounces+1) + p;
     return bounceBuffer[idx];
 }
 
@@ -152,8 +147,7 @@ void appendBounce(inout Path path,
                   const float3 wi,
                   const uint bsdfSampledLobe) {
     const uint2 pixel = path.getPixel();
-    //const uint idx = ((pixel.x % mTileSize) + (pixel.y % mTileSize)*mTileSize)*(mMaxBounces+1) + path.length;
-    const uint idx = (pixel.x + pixel.y * 1920) * (mMaxBounces + 1) + path.length; // TODO: un-hardcode
+    const uint idx = ((pixel.x % mTileSize) + (pixel.y % mTileSize)*mTileSize)*(mMaxBounces+1) + path.length;
 
     BounceData bounce;
     bounce.flags = path.flags;

@@ -70,6 +70,8 @@ private:
     void temporalReusePass(RenderContext* pRenderContext, const RenderData& renderData);
     void loadSurfaceDataPass(RenderContext* pRenderContext, const RenderData& renderData);
 
+    void finalizePass(RenderContext* pRenderContext, const RenderData& renderData);
+
     // Internal state
     Scene::SharedPtr            mpScene;                        ///< Current scene.
     SampleGenerator::SharedPtr  mpSampleGenerator;              ///< GPU sample generator.
@@ -78,10 +80,11 @@ private:
 
     uint32_t                    mTileSize = 512;                ///< Size of a tile
     uint                        mMaxBounces = 1;               ///< Max number of indirect bounces (0 = none).
-    uint                        mBounceBufferCount = 2;
-    uint                        mBounceBufferIndex = 0;
-    std::vector<Buffer::SharedPtr>           mpBounceBuffers;                 ///< Per-tile bounce buffers (vector for swap).
-    std::vector<Buffer::SharedPtr>           mpReservoirBuffers;                 ///< Per-tile reservoir buffers (vector for swap).
+    uint                        mMaxBeams = 4;                 ///< Max beams to be saved for the final pass and reuse
+    uint                        mReservoirBufferIndex = 0;
+    Buffer::SharedPtr           mpBounceBuffer;                 ///< Per-tile bounce buffers (vector for swap).
+    std::vector<Buffer::SharedPtr>           mpReservoirBuffers;                 ///< Per-frame reservoir buffers (vector for swap).
+    std::vector<Buffer::SharedPtr>           mpBeamBuffers;                 ///< Per-frame plt beam buffers (vector for swap).
 
     std::vector<Buffer::SharedPtr> mpSurfaceData;                    ///< Pointer to the buffer for surface data (current and prev frame).
     std::vector<Buffer::SharedPtr> mpNormalDepth;                    ///< Pointer to the buffer for normal depth (current and prev frame).
@@ -127,5 +130,6 @@ private:
 
     ComputePass::SharedPtr          mpTemporalReusePass;              ///< Compute pass for temporal reuse
     ComputePass::SharedPtr          mpLoadSurfaceDataPass;              ///< Compute pass for loading surface data
+    ComputePass::SharedPtr          mpFinalizePass;              ///< Compute pass for loading surface data
 };
 
