@@ -48,6 +48,9 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 namespace {
     const std::string kSamplePassFileName   = "RenderPasses/PLTPT/pltpt_sample.rt.slang";
     const std::string kSolvePassFileName    = "RenderPasses/PLTPT/pltpt_solve.rt.slang";
+    const std::string kFinalizePassFileName    = "RenderPasses/PLTPT/pltpt_finalize.cs.slang";
+    const std::string kLoadSurfaceDataPassFilename = "RenderPasses/PLTPT/LoadSurfaceDataPass.cs.slang";
+    const std::string kTemporalReusePassFilename = "RenderPasses/PLTPT/TemporalReusePass.cs.slang";
 
     const std::string kShaderModel = "6_5";
 
@@ -55,16 +58,21 @@ namespace {
     static constexpr uint32_t kBasePayloadSizeBytes = 84u;
     static constexpr uint32_t kShadowPayloadSizeBytes = 20u;
     static constexpr uint32_t kPerBouncePayloadSizeBytes = 40u;
+    static constexpr uint32_t kPerBeamPayloadSizeBytes = 160u;
+    static constexpr uint32_t kReservoirPayloadSizeBytes = 56u;
     static constexpr uint32_t kMaxRecursionDepth = 1u;
 
     static constexpr uint kVisibilityRayId = 0;
     static constexpr uint kShadowRayId = 1;
 
     const char kInputViewDir[] = "viewW";
+    const std::string kInputVBuffer = "vbuffer";
+    const std::string kInputMotionVectors = "mvec";
 
     const ChannelList kInputChannels = {
-        { "vbuffer",        "gVBuffer",     "Visibility buffer in packed format" },
+        { kInputVBuffer,        "gVBuffer",     "Visibility buffer in packed format" },
         { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
+        { kInputMotionVectors,  "gMotionVectors",   "Motion vector buffer (float format)", false /* optional */},
     };
 
     const ChannelList kOutputChannels = {
@@ -252,6 +260,8 @@ Program::DefineList PLTPT::getDefines() const {
     // Use compression for PackedHitInfo
     // defines.add("HIT_INFO_USE_COMPRESSION", "1");
 
+    defines.add("SAMPLE_GENERATOR_TYPE", std::to_string(SAMPLE_GENERATOR_UNIFORM));
+
     return defines;
 }
 
@@ -368,7 +378,14 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
         if (mpScene)
             setScene(pRenderContext, mpScene);
 
+        createBuffers(pRenderContext, renderData);
+
         mOptionsChanged = false;
+    }
+
+    if (!mpBounceBuffer)
+    {
+        createBuffers(pRenderContext, renderData);
     }
 
     // If we have no scene, just clear the outputs and return.
@@ -422,13 +439,6 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
         logWarning("Depth-of-field requires the '{}' input. Expect incorrect shading.", kInputViewDir);
     }
 
-    // Bounce buffer
-    const auto bounceBufferElements = (mMaxBounces+1u) * mTileSize*mTileSize;
-    if (mpBounceBuffer==nullptr || mpBounceBuffer->getElementCount() != (uint32_t)bounceBufferElements) {
-        mpBounceBuffer = Buffer::createStructured(this->mpDevice.get(), kPerBouncePayloadSizeBytes, (uint32_t)bounceBufferElements, Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false);
-        mpBounceBuffer->setName("PLTPT::mpBounceBuffer");
-    }
-
     auto defines = getDefines();
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     // TODO: This should be moved to a more general mechanism using Slang.
@@ -465,6 +475,8 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
             var["CB"]["kDebugViewIntensity"] = mDebugViewIntensity;
 
         var["bounceBuffer"] = mpBounceBuffer;
+        var["reservoirBuffer"] = mpReservoirBuffers[mReservoirBufferIndex];
+        var["beamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
     };
 
     varSetter(mSampleTracer.pVars->getRootVar());
@@ -483,8 +495,9 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
     for (const auto& channel : kSampleOutputChannels)   bind(channel, true, false);
     for (const auto& channel : kSolveOutputChannels)    bind(channel, false, true);
 
+    loadSurfaceDataPass(pRenderContext, renderData);
 
-    // Render
+    // Sample
     for (uint x=0;x<tiles.x;++x)
     for (uint y=0;y<tiles.y;++y) {
         mSampleTracer.pVars->getRootVar()["CB"]["kTile"] = uint2(x,y);
@@ -494,7 +507,11 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
         mpScene->raytrace(pRenderContext, mSolveTracer.pProgram.get(),  mSolveTracer.pVars,  { mTileSize, mTileSize, 1 });
     }
 
+    temporalReusePass(pRenderContext, renderData);
 
+    finalizePass(pRenderContext, renderData);
+
+    mReservoirBufferIndex = (mReservoirBufferIndex + 1) % 2;
     mFrameCount++;
 }
 
@@ -504,6 +521,8 @@ void PLTPT::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pSce
 
     mpEnvMapSampler = nullptr;
     mpSampleGenerator = nullptr;
+
+    mpTemporalReusePass = nullptr;
 
     mpScene = pScene;
 
@@ -548,6 +567,27 @@ void PLTPT::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pSce
         mSolveTracer.pBindingTable->setHitGroup(kShadowRayId, mpScene->getGeometryIDs(Scene::GeometryType::TriangleMesh), solveDesc.addHitGroup("shadowTriangleMeshHit"));
 
         mSolveTracer.pProgram = RtProgram::create(this->mpDevice, solveDesc, mpScene->getSceneDefines());
+
+        Program::Desc temporalReuseDesc;
+        temporalReuseDesc.addShaderModules(pScene->getShaderModules());
+        temporalReuseDesc.addTypeConformances(globalTypeConformances);
+        temporalReuseDesc.setShaderModel(kShaderModel);
+        temporalReuseDesc.addShaderLibrary(kTemporalReusePassFilename).csEntry("main");
+        mpTemporalReusePass = ComputePass::create(mpDevice, temporalReuseDesc, mpScene->getSceneDefines());
+
+        Program::Desc loadSurfaceDataDesc;
+        loadSurfaceDataDesc.addShaderModules(pScene->getShaderModules());
+        loadSurfaceDataDesc.addTypeConformances(globalTypeConformances);
+        loadSurfaceDataDesc.setShaderModel(kShaderModel);
+        loadSurfaceDataDesc.addShaderLibrary(kLoadSurfaceDataPassFilename).csEntry("main");
+        mpLoadSurfaceDataPass = ComputePass::create(mpDevice, loadSurfaceDataDesc, mpScene->getSceneDefines());
+
+        Program::Desc finalizePassDesc;
+        finalizePassDesc.addShaderModules(pScene->getShaderModules());
+        finalizePassDesc.addTypeConformances(globalTypeConformances);
+        finalizePassDesc.setShaderModel(kShaderModel);
+        finalizePassDesc.addShaderLibrary(kFinalizePassFileName).csEntry("main");
+        mpFinalizePass = ComputePass::create(mpDevice, finalizePassDesc, mpScene->getSceneDefines());
     }
 }
 
@@ -570,4 +610,118 @@ void PLTPT::prepareVars() {
         mpSampleGenerator->setShaderData(mSampleTracer.pVars->getRootVar());
         mpSampleGenerator->setShaderData(mSolveTracer.pVars->getRootVar());
     }
+}
+
+void PLTPT::createBuffers(RenderContext* pRenderContext, const RenderData& renderData) {
+
+    const uint2& targetDim = renderData.getDefaultTextureDims();
+    const auto pixelCount = (uint32_t)(targetDim.x * targetDim.y);
+
+    const auto bounceBufferElements = (mMaxBounces+1u) * (mTileSize * mTileSize);
+    const auto beamBufferElements = mMaxBeams * pixelCount;
+
+    mpBounceBuffer = nullptr;
+    mpReservoirBuffers.clear();
+    mpSurfaceData.clear();
+    for (uint i = 0; i < 2; ++i)
+    {
+        mpBounceBuffer = Buffer::createStructured(
+            this->mpDevice.get(), kPerBouncePayloadSizeBytes, (uint32_t)bounceBufferElements,
+            Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
+        );
+        mpBounceBuffer->setName("PLTPT::mpBounceBuffer_" + std::to_string(i));
+
+        mpBeamBuffers.push_back(Buffer::createStructured(
+            this->mpDevice.get(), kPerBeamPayloadSizeBytes, (uint32_t)beamBufferElements,
+            Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
+        ));
+        mpBeamBuffers[i]->setName("PLTPT::mpBeamBuffer_" + std::to_string(i));
+
+        mpReservoirBuffers.push_back(Buffer::createStructured(
+            this->mpDevice.get(), kReservoirPayloadSizeBytes, pixelCount,
+            Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
+        ));
+        mpReservoirBuffers[i]->setName("PLTPT::mpReservoirBuffer_" + std::to_string(i));
+
+        mpSurfaceData.push_back(Buffer::createStructured(
+            this->mpDevice.get(), sizeof(uint4) * 2 /*TODO: variable*/, pixelCount,
+            Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
+        ));
+        mpSurfaceData[i]->setName("PLTPT::mpSurfaceData_" + std::to_string(i));
+
+        mpNormalDepth.push_back(Buffer::createStructured(
+            this->mpDevice.get(), sizeof(uint2), pixelCount,
+            Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false));
+        mpNormalDepth[i]->setName("PLTPT::mpNormalDepth_" + std::to_string(i));
+    }
+}
+
+void PLTPT::loadSurfaceDataPass(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    FALCOR_PROFILE(pRenderContext, "PLTPT::loadSurfaceDataPass");
+
+    const uint2& targetDim = renderData.getDefaultTextureDims();
+
+    // Bind resources.
+    auto var = mpLoadSurfaceDataPass->getRootVar()["CB"]["gLoadSurfaceDataPass"];
+
+    var["gFrameDim"] = targetDim;
+    var["gFrameCount"] = mFrameCount;
+
+    var["gVBuffer"] = renderData.getTexture(kInputVBuffer);
+    var["gSurfaceData"] = mpSurfaceData[mReservoirBufferIndex];
+    var["gNormalDepth"] = mpNormalDepth[mReservoirBufferIndex];
+
+    mpLoadSurfaceDataPass["gScene"] = mpScene->getParameterBlock();
+    mpLoadSurfaceDataPass->execute(pRenderContext, { targetDim, 1u });
+}
+
+void PLTPT::temporalReusePass(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    FALCOR_PROFILE(pRenderContext, "PLTPT::temporalReusePass");
+
+    const uint2& targetDim = renderData.getDefaultTextureDims();
+
+    // Bind resources.
+    auto var = mpTemporalReusePass->getRootVar()["CB"]["gTemporalReusePass"];
+
+    var["gFrameDim"] = targetDim;
+    var["gFrameCount"] = mFrameCount;
+
+    var["gMotionVectors"] = renderData.getTexture(kInputMotionVectors);
+    var["gReservoirs"] = mpReservoirBuffers[mReservoirBufferIndex];
+    var["gSurfaceData"] = mpSurfaceData[mReservoirBufferIndex];
+    var["beamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
+
+    var["gPrevSurfaceData"] = mpSurfaceData[(mReservoirBufferIndex + 1) % 2];
+    var["gPrevReservoirs"] = mpReservoirBuffers[(mReservoirBufferIndex + 1) % 2];
+    var["prevBeamBuffer"] = mpBeamBuffers[(mReservoirBufferIndex + 1) % 2];
+
+    //var["gDebug"] = renderData.getTexture(kDebug);
+
+    mpTemporalReusePass["gScene"] = mpScene->getParameterBlock();
+
+    mpTemporalReusePass->execute(pRenderContext, { targetDim, 1u });
+}
+
+void PLTPT::finalizePass(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    FALCOR_PROFILE(pRenderContext, "PLTPT::finalizePass");
+
+    const uint2& targetDim = renderData.getDefaultTextureDims();
+
+    // Bind resources.
+    auto var = mpFinalizePass->getRootVar();
+
+    var["CB"]["gFrameCount"] = mFrameCount;
+    var["CB"]["kOutputSize"] = targetDim;
+
+    var["gOutputColor"] = renderData.getTexture("color");
+
+    var["reservoirBuffer"] = mpReservoirBuffers[mReservoirBufferIndex];
+    var["beamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
+
+    mpFinalizePass["gScene"] = mpScene->getParameterBlock();
+
+    mpFinalizePass->execute(pRenderContext, { targetDim, 1u });
 }

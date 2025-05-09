@@ -2,7 +2,7 @@
 #pragma once
 
 #ifndef HWSS_SAMPLES
-#define HWSS_SAMPLES 1
+#define HWSS_SAMPLES 4
 #endif
 
 static const uint hwss_samples = HWSS_SAMPLES;

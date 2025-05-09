@@ -41,6 +41,10 @@ __exported import Utils.Sampling.SampleGeneratorInterface;
     padding to make the struct a multiple of 16B.
 */
 
+#ifndef SAMPLE_GENERATOR_TYPE
+#define SAMPLE_GENERATOR_TYPE SAMPLE_GENERATOR_UNIFORM
+#endif
+
 #if defined(SAMPLE_GENERATOR_TYPE) && SAMPLE_GENERATOR_TYPE == SAMPLE_GENERATOR_TINY_UNIFORM
     import Utils.Sampling.TinyUniformSampleGenerator;
     typedef TinyUniformSampleGenerator SampleGenerator;

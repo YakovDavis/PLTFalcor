@@ -39,6 +39,7 @@ def render_graph_PLTPT():
 
     g.addEdge("GBufferRT.vbuffer", "PLTPT.vbuffer")
     g.addEdge("GBufferRT.viewW", "PLTPT.viewW")
+    g.addEdge("GBufferRT.mvec", "PLTPT.mvec")
 
     # g.addEdge("GBufferRT.mvec", "DLSS.mvec")
     # g.addEdge("GBufferRT.linearZ", "DLSS.depth")

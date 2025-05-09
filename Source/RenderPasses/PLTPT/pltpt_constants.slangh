@@ -10,7 +10,7 @@
 #endif
 
 #ifndef DO_DEBUG_VIEW
-#define DO_DEBUG_VIEW false
+#define DO_DEBUG_VIEW 0
 #endif
 #ifndef DEBUG_VIEW_TYPE
 #define DEBUG_VIEW_TYPE 0
@@ -52,4 +52,12 @@
 
 #ifndef NEE_USE_PER_TILE_SG_SELECTOR
 #define NEE_USE_PER_TILE_SG_SELECTOR true
+#endif
+
+#ifndef TILE_SIZE
+#define TILE_SIZE 512
+#endif
+
+#ifndef MAX_BEAM_COUNT
+#define MAX_BEAM_COUNT 4
 #endif

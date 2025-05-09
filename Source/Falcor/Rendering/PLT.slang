@@ -77,6 +77,27 @@ struct PLTCoherence {
     }
 };
 
+// 160 bytes
+struct PackedPLTBeam {
+    // 4x16B
+    uint4 L;
+    uint4 L1;
+    uint4 L2;
+    uint4 L3;
+
+    // 2x16B
+    uint4 wavelengths;
+    uint4 spectralPDFs;
+
+    // 16B
+    uint4 packedTheta;
+
+    // 3x16B
+    uint4 posW_distant;
+    uint4 r_hwss_comps;
+    uint4 t;
+}
+
 // Units:
 // wavenumbers k in (um)^(-1)
 // distances in m
@@ -112,6 +133,55 @@ struct PLTBeam {
         this.r = dir;
         this.t = tangent;
         this.distant = distant;
+    }
+
+    PackedPLTBeam pack() {
+        PackedPLTBeam b = {};
+
+        b.L = uint4(asuint(this.L[0]), asuint(this.L[1]), asuint(this.L[2]), asuint(this.L[3]));
+        b.L1 = uint4(asuint(this.L1[0]), asuint(this.L1[1]), asuint(this.L1[2]), asuint(this.L1[3]));
+        b.L2 = uint4(asuint(this.L2[0]), asuint(this.L2[1]), asuint(this.L2[2]), asuint(this.L2[3]));
+        b.L3 = uint4(asuint(this.L3[0]), asuint(this.L3[1]), asuint(this.L3[2]), asuint(this.L3[3]));
+
+        b.wavelengths = uint4(asuint(this.wavelengths[0]), asuint(this.wavelengths[1]), asuint(this.wavelengths[2]), asuint(this.wavelengths[3]));
+        b.spectralPDFs = uint4(asuint(this.spectralPDFs[0]), asuint(this.spectralPDFs[1]), asuint(this.spectralPDFs[2]), asuint(this.spectralPDFs[3]));
+
+        b.packedTheta = uint4(asuint(this.Theta.D.x), asuint(this.Theta.D.y), asuint(this.Theta.D.z), asuint(this.Theta.r_m));
+
+        b.r_hwss_comps = uint4(asuint(this.r.x), asuint(this.r.y), asuint(this.r.z), this.hwss_comps);
+        b.posW_distant = uint4(asuint(this.posW.x), asuint(this.posW.y), asuint(this.posW.z), this.distant ? 1u :0u);
+        b.t = uint4(asuint(this.t.x), asuint(this.t.y), asuint(this.t.z), 0u);
+
+        return b;
+    }
+
+    static PLTBeam unpack(const PackedPLTBeam packedPltBeam) {
+        PLTBeam b;
+
+        b.L = hwss_t(0.f);
+        b.L[0] = asfloat(packedPltBeam.L.x); b.L[1] = asfloat(packedPltBeam.L.y); b.L[2] = asfloat(packedPltBeam.L.z); b.L[3] = asfloat(packedPltBeam.L.w);
+        b.L1 = hwss_t(0.f);
+        b.L1[0] = asfloat(packedPltBeam.L1.x); b.L1[1] = asfloat(packedPltBeam.L1.y); b.L1[2] = asfloat(packedPltBeam.L1.z); b.L1[3] = asfloat(packedPltBeam.L1.w);
+        b.L2 = hwss_t(0.f);
+        b.L2[0] = asfloat(packedPltBeam.L2.x); b.L2[1] = asfloat(packedPltBeam.L2.y); b.L2[2] = asfloat(packedPltBeam.L2.z); b.L2[3] = asfloat(packedPltBeam.L2.w);
+        b.L3 = hwss_t(0.f);
+        b.L3[0] = asfloat(packedPltBeam.L3.x); b.L3[1] = asfloat(packedPltBeam.L3.y); b.L3[2] = asfloat(packedPltBeam.L3.z); b.L3[3] = asfloat(packedPltBeam.L3.w);
+
+        b.wavelengths = hwss_t(0.f);
+        b.wavelengths[0] = asfloat(packedPltBeam.wavelengths.x); b.wavelengths[1] = asfloat(packedPltBeam.wavelengths.y); b.wavelengths[2] = asfloat(packedPltBeam.wavelengths.z); b.wavelengths[3] = asfloat(packedPltBeam.wavelengths.w);
+        b.spectralPDFs = hwss_t(0.f);
+        b.spectralPDFs[0] = asfloat(packedPltBeam.spectralPDFs.x); b.spectralPDFs[1] = asfloat(packedPltBeam.spectralPDFs.y); b.spectralPDFs[2] = asfloat(packedPltBeam.spectralPDFs.z); b.spectralPDFs[3] = asfloat(packedPltBeam.spectralPDFs.w);
+
+        b.Theta.D = asfloat(packedPltBeam.packedTheta.xyz);
+        b.Theta.r_m = asfloat(packedPltBeam.packedTheta.w);
+
+        b.posW = asfloat(packedPltBeam.posW_distant.xyz);
+        b.hwss_comps = packedPltBeam.r_hwss_comps.w > 0u;
+        b.r = asfloat(packedPltBeam.r_hwss_comps.xyz);
+        b.t = asfloat(packedPltBeam.t.xyz);
+        b.distant = packedPltBeam.posW_distant.w > 0u;
+
+        return b;
     }
 
     float4 getSP(int hwss_idx) {
@@ -241,6 +311,17 @@ struct PLTBeam {
     // Beam carries a single wavelength henceforth.
     [mutating] void collapseToHeroWavelengthOnly() {
         hwss_comps = 1;
+    }
+
+    float getRestirPdf()
+    {
+        float Result = 0.f;
+        [unroll]
+        for (int p = 0; p < hwss_comps; ++p)
+        {
+            Result += L[p];
+        }
+        return Result;
     }
 };
 

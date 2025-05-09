@@ -65,6 +65,13 @@ private:
     void parseDictionary(const Dictionary& dict);
     void prepareVars();
 
+    void createBuffers(RenderContext* pRenderContext, const RenderData& renderData);
+
+    void temporalReusePass(RenderContext* pRenderContext, const RenderData& renderData);
+    void loadSurfaceDataPass(RenderContext* pRenderContext, const RenderData& renderData);
+
+    void finalizePass(RenderContext* pRenderContext, const RenderData& renderData);
+
     // Internal state
     Scene::SharedPtr            mpScene;                        ///< Current scene.
     SampleGenerator::SharedPtr  mpSampleGenerator;              ///< GPU sample generator.
@@ -72,8 +79,15 @@ private:
     EmissiveLightSampler::SharedPtr mpEmissiveSampler;
 
     uint32_t                    mTileSize = 512;                ///< Size of a tile
-    uint                        mMaxBounces = 32;               ///< Max number of indirect bounces (0 = none).
+    uint                        mMaxBounces = 4;               ///< Max number of indirect bounces (0 = none).
     Buffer::SharedPtr           mpBounceBuffer;                 ///< Per-tile bounce buffer.
+    uint                        mMaxBeams = 4;                 ///< Max beams to be saved for the final pass and reuse
+    uint                        mReservoirBufferIndex = 0;
+    std::vector<Buffer::SharedPtr>           mpReservoirBuffers;                 ///< Per-frame reservoir buffers (vector for swap).
+    std::vector<Buffer::SharedPtr>           mpBeamBuffers;                 ///< Per-frame plt beam buffers (vector for swap).
+
+    std::vector<Buffer::SharedPtr> mpSurfaceData;                    ///< Pointer to the buffer for surface data (current and prev frame).
+    std::vector<Buffer::SharedPtr> mpNormalDepth;                    ///< Pointer to the buffer for normal depth (current and prev frame).
 
     // Configuration
     uint32_t                    mSelectedSampleGenerator = SAMPLE_GENERATOR_DEFAULT;            ///< Which pseudorandom sample generator to use.
@@ -118,5 +132,9 @@ private:
         RtProgramVars::SharedPtr pVars;
     };
     tracer_t mSampleTracer, mSolveTracer;
+
+    ComputePass::SharedPtr          mpTemporalReusePass;              ///< Compute pass for temporal reuse
+    ComputePass::SharedPtr          mpLoadSurfaceDataPass;              ///< Compute pass for loading surface data
+    ComputePass::SharedPtr          mpFinalizePass;              ///< Compute pass for loading surface data
 };
 
