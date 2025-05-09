@@ -78,61 +78,6 @@ void forwardUnwind(const int bounceIdx, const uint2 pixel, inout PLTBeam beam, i
     }
     appendBeam(beam, pixel, reservoir);
 }
-/*
-// Measure beam at sensor
-void measure(inout PLTSolve solveData, const int bounceIdx, float pathContribution, inout PLTBeam beam) {
-    if (!kUseDirectLights && bounceIdx<=1)
-        return;
-
-    const float k = M_2PI / (1e-3f * beam.wavelengths.x);
-
-#if DO_DEBUG_VIEW==1
-    // Write coherence debug values before propagation to camera
-    writeDebugOutputCC2(DebugViewType::coherence_area, solveData, sqrt(beam.coherenceArea(k))/150.f);
-    writeDebugOutputCC(DebugViewType::coherence_anisotropy, solveData, beam.coherenceAnisotropy(k));
-#endif
-
-    // Propagate to camera
-    beam.propagate(gScene.camera.data.posW);
-
-    // Camera polarizer
-    const float polarizationIntensity = gScene.camera.data.polarizer;
-    const float polarizationTheta = gScene.camera.data.polarizerTheta;
-    if (polarizationIntensity>.0f) {
-        // Rotate to camera frame
-        const float3 cameraW = normalize(gScene.camera.data.cameraW);
-        const float3 cameraU = normalize(gScene.camera.data.cameraU);
-        beam.rotateFrame(cameraU,-cameraW);
-
-        // Polarize
-        const float4x4 P = (1.f-polarizationIntensity) * ident4() +
-                            polarizationIntensity * MuellerPolarizer(polarizationTheta);
-        for (int j = 0; j < beam.hwss_comps; ++j)
-            beam.setSP(j, mul(P, beam.getSP(j)));
-    }
-
-    // TODO: Camera/lens effects
-
-    if (mHWSSDoMIS) {
-        // MIS spectral contributions
-        const float sum = dot(beam.spectralPDFs, hwss_t(1.f));
-        pathContribution *= sum>FLT_EPSILON ? beam.spectralPDFs[0]/sum : .0f;
-    }
-    else
-        pathContribution *= 1.f / float(beam.hwss_comps);
-
-    const hwss_t Li = beam.L;
-    const float3 Lrgb = max(float3(.0f), SpectrumUtils.spectrumToRgb(Li, beam.wavelengths, beam.hwss_comps) * pathContribution);
-
-    if (all(isfinite(Lrgb)))
-        solveData.Lrgb += Lrgb;
-
-#if DO_DEBUG_VIEW==1
-    // Write debug views
-    markDebug(solveData, bounceIdx, beam);
-#endif
-}
-*/
 
 /** Emissive contributions */
 
@@ -182,7 +127,6 @@ void evalEmissive(inout PLTSolve solveData,
                 beam.collapseToHeroWavelengthOnly();
 
             forwardUnwind(bounceIdx, pixel, beam, reservoir);
-            //measure(solveData, bounceIdx, bounce.pathContribution, beam);
         }
     }
 }
@@ -226,7 +170,6 @@ void evalNEE(inout PLTSolve solveData,
 
     // Forward unwind beam
     forwardUnwind(bounceIdx, pixel, beam, reservoir);
-    //measure(solveData, bounceIdx, bounce.pathContribution, beam);
 }
 
 void NEE(inout PLTSolve solveData,
@@ -309,7 +252,6 @@ void onMiss(inout PLTSolve solveData,
 
         // Forward unwind beam
         forwardUnwind(bounceIdx, pixel, beam, reservoir);
-        //measure(solveData, bounceIdx, bounce.pathContribution, beam);
     }
 }
 

@@ -108,7 +108,7 @@ private:
 
     bool                        mAlphaMasking = true;
 
-    bool                        mDoNEE = false;
+    bool                        mDoNEE = true;
     bool                        mDoMIS = false;
     EmissiveLightSamplerType    mEmissiveSampler = EmissiveLightSamplerType::Power;
     bool                        mDoRussianRoulette = true;

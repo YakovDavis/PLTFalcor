@@ -78,7 +78,7 @@ struct TemporalReusePass
             prevPixel = reprojPos + offset;
 
             // Test if previous pixel position is out of bounds.
-            if (any(prevPixel >= gFrameDim) || any(prevPixel < 0))
+            if (any(prevPixel >= gFrameDim) || any(prevPixel < 1)) // 1 and not 0 because 0 causes artifacts
                 continue;
 
             // Load shading data for the previous pixel.

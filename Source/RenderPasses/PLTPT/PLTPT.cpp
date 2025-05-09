@@ -72,7 +72,7 @@ namespace {
     const ChannelList kInputChannels = {
         { kInputVBuffer,        "gVBuffer",     "Visibility buffer in packed format" },
         { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
-        { kInputMotionVectors,  "gMotionVectors",   "Motion vector buffer (float format)", true /* optional */},
+        { kInputMotionVectors,  "gMotionVectors",   "Motion vector buffer (float format)", false /* optional */},
     };
 
     const ChannelList kOutputChannels = {
