@@ -57,3 +57,7 @@
 #ifndef TILE_SIZE
 #define TILE_SIZE 512
 #endif
+
+#ifndef MAX_BEAM_COUNT
+#define MAX_BEAM_COUNT 4
+#endif

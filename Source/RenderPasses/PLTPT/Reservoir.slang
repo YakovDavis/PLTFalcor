@@ -59,6 +59,8 @@ struct Reservoir {
 
         if (isSelected) {
             this.W = targetPDF;
+            this.bounceData = reservoir.bounceData;
+            this.beamCount = reservoir.beamCount;
         }
 
         return isSelected;

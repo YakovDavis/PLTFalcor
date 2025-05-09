@@ -38,13 +38,15 @@ struct TemporalReusePass
     StructuredBuffer<PackedSurfaceData> gPrevSurfaceData;   ///< Surface data for the previous frame.
     StructuredBuffer<PackedReservoir> gPrevReservoirs; ///< Buffer with reservoirs from the previous frame.
     RWStructuredBuffer<PackedReservoir> gReservoirs; ///< Buffer with reservoirs.
+    StructuredBuffer<PackedPLTBeam> prevBeamBuffer; ///< Buffer with reservoir beams from the previous frame.
+    RWStructuredBuffer<PackedPLTBeam> beamBuffer; ///< Buffer with reservoir beams
 
     void execute(const uint2 pixel)
     {
         if (any(pixel >= gFrameDim)) return;
 
         // Get index for the structured buffer access.
-        uint bufferIndex = getBufferIndex(pixel, gFrameDim);
+        uint bufferIndex = pixel.y * gFrameDim.x + pixel.x;
 
         // Create sample generator.
         SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
@@ -93,11 +95,12 @@ struct TemporalReusePass
         }
 
         if (!neighborFound) {
-            gReservoirs[bufferIndex] = currentReservoir.pack();
+            return;
+            //gReservoirs[bufferIndex] = currentReservoir.pack();
         }
 
         // Get index for the structured buffer access for the previous pixel.
-        uint prevBufferIndex = getBufferIndex(prevPixel, gFrameDim);
+        uint prevBufferIndex = prevPixel.y * gFrameDim.x + prevPixel.x;
 
         Reservoir outputReservoir;
         // Get final reservoir from the previous frame.
@@ -107,17 +110,34 @@ struct TemporalReusePass
         prevReservoir.M = min(prevReservoir.M, kMCap);
 
         // Standard combination of multiple reservoirs (Algorithm 4 from the original paper):
-        float prevTargetPdf = 0; // prevReservoir.pltBeam.L;
-        outputReservoir.update(prevReservoir, prevTargetPdf, sg);
+        float prevTargetPdf = 0.f;
+        const uint prevBeam0Idx = (prevPixel.x + (prevPixel.y * gFrameDim.x)) * 4; // TODO: kMaxBeamCount;
+        for (int p = 0; p < prevReservoir.beamCount; ++p) {
+            PLTBeam b = PLTBeam::unpack(prevBeamBuffer[prevBeam0Idx + p]);
+            prevTargetPdf += b.getRestirPdf();
+        }
+        bool prevChosen = outputReservoir.update(prevReservoir, prevTargetPdf, sg);
 
-        float targetPdf = 0; // currentReservoir.pltBeam.L;
+        float targetPdf = 0.f;
+        const uint beam0Idx = (pixel.x + (pixel.y * gFrameDim.x)) * 4; // TODO: kMaxBeamCount;
+        for (int p = 0; p < currentReservoir.beamCount; ++p) {
+            PLTBeam b = PLTBeam::unpack(beamBuffer[beam0Idx + p]);
+            targetPdf += b.getRestirPdf();
+        }
         bool currentChosen = outputReservoir.update(currentReservoir, targetPdf, sg);
 
-        //outputReservoir.pathInfo.isPrevBounceBuffer = currentChosen ? 0 : 1;
-
         outputReservoir.W = outputReservoir.W  > 0.f ? outputReservoir.weightSum / (outputReservoir.M * outputReservoir.W) : 0.f;
+
         // Store combined reservoir.
         gReservoirs[bufferIndex] = outputReservoir.pack();
+
+        // Move beams from prev to current if prev chosen
+        if (!currentChosen && prevChosen)
+        {
+            for (int p = 0; p < prevReservoir.beamCount; ++p) {
+                beamBuffer[beam0Idx + p] = prevBeamBuffer[prevBeam0Idx + p];
+            }
+        }
     }
 }
 

@@ -110,22 +110,21 @@ float3 measure(float pathContribution, inout PLTBeam beam) {
     return float3(0.f);
 }
 
-uniform uint gMaxBeamCount;
-uniform uint2 gFrameDim;
-
 [numthreads(16, 16, 1)]
 void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
+    const uint2 pixel = dispatchThreadId.xy;
+    if (any(pixel >= kOutputSize)) return;
+
     float3 finalColor = float3(0.f);
 
-    const uint2 pixel = dispatchThreadId.xy;
-    const uint beam0Idx = (pixel.x + (pixel.y * gFrameDim.x)) * gMaxBeamCount;
+    const uint beam0Idx = (pixel.x + (pixel.y * kOutputSize.x)) * kMaxBeamCount;
 
-    const uint reservoirIdx = pixel.y * gFrameDim.x + pixel.x;
+    const uint reservoirIdx = pixel.y * kOutputSize.x + pixel.x;
     const Reservoir reservoir = Reservoir::unpack(reservoirBuffer[reservoirIdx]);
     const BounceData bounce = reservoir.bounceData;
 
-    for (int p = 0; p < gMaxBeamCount; ++p)
+    for (int p = 0; p < reservoir.beamCount; ++p)
     {
         PLTBeam beam = PLTBeam::unpack(beamBuffer[beam0Idx + p]);
         unwindLastStep(bounce, pixel, beam);

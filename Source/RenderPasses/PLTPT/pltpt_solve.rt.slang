@@ -76,7 +76,7 @@ void forwardUnwind(const int bounceIdx, const uint2 pixel, inout PLTBeam beam, i
 
         forwardUnwindStep(triangleHit, v, wo, bounce.sampledBsdfLobe, beam);
     }
-    appendBeam(beam.pack(), pixel, reservoir);
+    appendBeam(beam, pixel, reservoir);
 }
 /*
 // Measure beam at sensor
@@ -385,6 +385,8 @@ void main() {
         solveData.pathOrigin = v.posW;
         solveData.pathNormal = sd.N;
     }
+
+    reservoir.M = 1;
 
     const uint reservoirIdx = pixel.x + pixel.y * kOutputSize.x;
     reservoirBuffer[reservoirIdx] = reservoir.pack();

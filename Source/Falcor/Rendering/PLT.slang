@@ -311,6 +311,16 @@ struct PLTBeam {
     [mutating] void collapseToHeroWavelengthOnly() {
         hwss_comps = 1;
     }
+
+    float getRestirPdf()
+    {
+        float Result = 0.f;
+        for (int p = 0; p < hwss_comps; ++p)
+        {
+            Result += L[p];
+        }
+        return Result;
+    }
 };
 
 

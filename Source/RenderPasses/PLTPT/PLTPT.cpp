@@ -478,7 +478,7 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
         mpScene->raytrace(pRenderContext, mSolveTracer.pProgram.get(),  mSolveTracer.pVars,  { mTileSize, mTileSize, 1 });
     }
 
-    //temporalReusePass(pRenderContext, renderData);
+    temporalReusePass(pRenderContext, renderData);
 
     finalizePass(pRenderContext, renderData);
 
@@ -662,9 +662,12 @@ void PLTPT::temporalReusePass(RenderContext* pRenderContext, const RenderData& r
     var["gMotionVectors"] = renderData.getTexture(kInputMotionVectors);
     var["gReservoirs"] = mpReservoirBuffers[mReservoirBufferIndex];
     var["gSurfaceData"] = mpSurfaceData[mReservoirBufferIndex];
+    var["beamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
 
     var["gPrevSurfaceData"] = mpSurfaceData[(mReservoirBufferIndex + 1) % 2];
     var["gPrevReservoirs"] = mpReservoirBuffers[(mReservoirBufferIndex + 1) % 2];
+    var["prevBeamBuffer"] = mpBeamBuffers[(mReservoirBufferIndex + 1) % 2];
+
     //var["gDebug"] = renderData.getTexture(kDebug);
 
     mpTemporalReusePass["gScene"] = mpScene->getParameterBlock();
@@ -681,10 +684,8 @@ void PLTPT::finalizePass(RenderContext* pRenderContext, const RenderData& render
     // Bind resources.
     auto var = mpFinalizePass->getRootVar();
 
-    var["gFrameDim"] = targetDim;
-    //var["gFrameCount"] = mFrameCount;
-
-    var["gMaxBeamCount"] = mMaxBeams;
+    var["CB"]["gFrameCount"] = mFrameCount;
+    var["CB"]["kOutputSize"] = targetDim;
 
     var["gOutputColor"] = renderData.getTexture("color");
 

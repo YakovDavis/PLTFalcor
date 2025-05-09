@@ -125,6 +125,8 @@ static const bool kDoRussianRoulette = DO_RUSSIAN_ROULETTE;
 
 static const bool kForceFullyCoherent = false;
 
+static const uint kMaxBeamCount = MAX_BEAM_COUNT;
+
 
 /** Bounce storage */
 
@@ -173,20 +175,21 @@ void appendBounce(inout Path path, const float3 wi) {
 
 PLTBeam readBeam(const int p, const uint2 pixel)
 {
-    const uint idx = (pixel.x + pixel.y * kOutputSize.x) * 4/*(TODO) mMaxBeamCount*/ + p;
+    const uint idx = (pixel.x + pixel.y * kOutputSize.x) * kMaxBeamCount + p;
     return PLTBeam::unpack(beamBuffer[idx]);
 }
 
-bool appendBeam(const PackedPLTBeam beam, const uint2 pixel, inout Reservoir reservoir)
+bool appendBeam(const PLTBeam beam, const uint2 pixel, inout Reservoir reservoir)
 {
     const uint beamCount = reservoir.beamCount;
 
-    if (beamCount > 4/*(TODO) mMaxBeamCount*/)
+    if (beamCount > kMaxBeamCount)
         return false;
 
-    const uint idx = (pixel.x + pixel.y * kOutputSize.x) * 4/*(TODO) mMaxBeamCount*/ + beamCount;
-    beamBuffer[idx] = beam;
+    const uint idx = (pixel.x + pixel.y * kOutputSize.x) * kMaxBeamCount + beamCount;
+    beamBuffer[idx] = beam.pack();
     reservoir.beamCount = beamCount + 1;
+    reservoir.W += beam.getRestirPdf();
     return true;
 }
 
