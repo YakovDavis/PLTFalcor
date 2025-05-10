@@ -81,4 +81,23 @@ float3 getPrimaryRayDir(uint2 launchIndex, uint2 launchDim, const Camera camera)
     return camera.computeRayPinhole(launchIndex, launchDim).dir;
 }
 
+/** Sample a random neighboring pixel within a given radius.
+ */
+uint2 getRandomNeighborPixel<S : ISampleGenerator>(uint2 pixel, inout S sg, float radius)
+{
+    // Generate a random point within the radius around the current pixel using polar coordinates.
+    // rho and theta are respectively the radius and angle of the polar coordinates.
+
+    float rho = radius * sqrt(sampleNext1D(sg));
+    float theta = 2.0f * M_PI * sampleNext1D(sg);
+
+    // Convert the polar coordinates to Cartesian coordinates.
+    float2 randomPixel = pixel;
+    randomPixel.x += rho * cos(theta);
+    randomPixel.y += rho * sin(theta);
+
+    // Return the random neighboring pixel after rounding to the nearest integer value, because pixel coordinates are integers.
+    return uint2(round(randomPixel));
+}
+
 

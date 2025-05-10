@@ -68,6 +68,8 @@ private:
     void createBuffers(RenderContext* pRenderContext, const RenderData& renderData);
 
     void temporalReusePass(RenderContext* pRenderContext, const RenderData& renderData);
+    void spatialReusePass(RenderContext* pRenderContext, const RenderData& renderData);
+
     void loadSurfaceDataPass(RenderContext* pRenderContext, const RenderData& renderData);
 
     void finalizePass(RenderContext* pRenderContext, const RenderData& renderData);
@@ -108,6 +110,9 @@ private:
 
     bool                        mAlphaMasking = true;
 
+    bool                        mDoTemporalReuse = true;
+    bool                        mDoSpatialReuse = false;
+
     bool                        mDoNEE = true;
     bool                        mDoMIS = true;
     EmissiveLightSamplerType    mEmissiveSampler = EmissiveLightSamplerType::Power;
@@ -134,6 +139,7 @@ private:
     tracer_t mSampleTracer, mSolveTracer;
 
     ComputePass::SharedPtr          mpTemporalReusePass;              ///< Compute pass for temporal reuse
+    ComputePass::SharedPtr          mpSpatialReusePass;              ///< Compute pass for spatial reuse
     ComputePass::SharedPtr          mpLoadSurfaceDataPass;              ///< Compute pass for loading surface data
     ComputePass::SharedPtr          mpFinalizePass;              ///< Compute pass for loading surface data
 };

@@ -24,6 +24,7 @@ target_sources(PLTPT PRIVATE
     ReSTIRHelperFunctions.slang
     Reservoir.slang
     TemporalReusePass.cs.slang
+    SpatialReusePass.cs.slang
 )
 
 target_copy_shaders(PLTPT RenderPasses/PLTPT)

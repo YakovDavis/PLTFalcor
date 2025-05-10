@@ -2,20 +2,7 @@
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
-//import Scene.Raytracing;
-//import Utils.Geometry.GeometryHelpers;
-
-//__exported import Scene.Shading;
-//__exported import Utils.Timing.GpuTimer;
-//__exported import Utils.Math.Ray;
-//import Utils.Math.MathHelpers;
 import Utils.Sampling.SampleGenerator;
-
-//import Scene.SceneTypes;
-//import Scene.ShadingData;
-//import Utils.Math.MathHelpers;
-//import Utils.Math.FormatConversion;
-//__exported import Scene.Material.ShadingUtils;
 
 import Utils.Color.ColorHelpers;
 
@@ -36,10 +23,10 @@ struct TemporalReusePass
     Texture2D<float2> gMotionVectors; ///< 2D screen space motion vector.
     StructuredBuffer<PackedSurfaceData> gSurfaceData;   ///< Surface data for the current frame.
     StructuredBuffer<PackedSurfaceData> gPrevSurfaceData;   ///< Surface data for the previous frame.
-    StructuredBuffer<PackedReservoir> gPrevReservoirs; ///< Buffer with reservoirs from the previous frame.
-    RWStructuredBuffer<PackedReservoir> gReservoirs; ///< Buffer with reservoirs.
-    StructuredBuffer<PackedPLTBeam> prevBeamBuffer; ///< Buffer with reservoir beams from the previous frame.
-    RWStructuredBuffer<PackedPLTBeam> beamBuffer; ///< Buffer with reservoir beams
+    RWStructuredBuffer<PackedReservoir> gPrevReservoirs; ///< Buffer with reservoirs from the previous frame.
+    StructuredBuffer<PackedReservoir> gReservoirs; ///< Buffer with reservoirs.
+    RWStructuredBuffer<PackedPLTBeam> prevBeamBuffer; ///< Buffer with reservoir beams from the previous frame.
+    StructuredBuffer<PackedPLTBeam> beamBuffer; ///< Buffer with reservoir beams
 
     void execute(const uint2 pixel)
     {
@@ -95,8 +82,8 @@ struct TemporalReusePass
         }
 
         if (!neighborFound) {
+            gPrevReservoirs[bufferIndex] = currentReservoir.pack();
             return;
-            //gReservoirs[bufferIndex] = currentReservoir.pack();
         }
 
         // Get index for the structured buffer access for the previous pixel.
@@ -129,13 +116,13 @@ struct TemporalReusePass
         outputReservoir.W = outputReservoir.W  > 0.f ? outputReservoir.weightSum / (outputReservoir.M * outputReservoir.W) : 0.f;
 
         // Store combined reservoir.
-        gReservoirs[bufferIndex] = outputReservoir.pack();
+        gPrevReservoirs[bufferIndex] = outputReservoir.pack();
 
         // Move beams from prev to current if prev chosen
-        if (!currentChosen && prevChosen)
+        if (currentChosen)
         {
             for (int p = 0; p < prevReservoir.beamCount; ++p) {
-                beamBuffer[beam0Idx + p] = prevBeamBuffer[prevBeam0Idx + p];
+                prevBeamBuffer[beam0Idx + p] = beamBuffer[beam0Idx + p];
             }
         }
     }

@@ -51,6 +51,7 @@ namespace {
     const std::string kFinalizePassFileName    = "RenderPasses/PLTPT/pltpt_finalize.cs.slang";
     const std::string kLoadSurfaceDataPassFilename = "RenderPasses/PLTPT/LoadSurfaceDataPass.cs.slang";
     const std::string kTemporalReusePassFilename = "RenderPasses/PLTPT/TemporalReusePass.cs.slang";
+    const std::string kSpatialReusePassFilename = "RenderPasses/PLTPT/SpatialReusePass.cs.slang";
 
     const std::string kShaderModel = "6_5";
 
@@ -141,7 +142,8 @@ namespace {
     const std::string kMNEEMaxIterations = "MNEEMaxIterations";
     const std::string kMNEESolverThreshold = "MNEESolverThreshold";
 
-    const std::string kBounceBufferName = "bounceBuffer";
+    const std::string kDoTemporalReuse = "doTemporalReuse";
+    const std::string kDoSpatialReuse = "doSpatialReuse";
 }
 
 PLTPT::PLTPT(std::shared_ptr<Device> pDevice) : RenderPass(std::move(pDevice)) {}
@@ -178,6 +180,8 @@ void PLTPT::parseDictionary(const Dictionary& dict) {
         else if (key == kMNEEMaxOccluders) mMNEEMaxOccluders = value;
         else if (key == kMNEEMaxIterations) mMNEEMaxIterations = value;
         else if (key == kMNEESolverThreshold) mMNEESolverThreshold = value;
+        else if (key == kDoTemporalReuse) mDoTemporalReuse = value;
+        else if (key == kDoSpatialReuse) mDoSpatialReuse = value;
         else logError("Unknown field '{}' in PLTPathTracer dictionary.", key);
     }
 }
@@ -208,6 +212,8 @@ Dictionary PLTPT::getScriptingDictionary() {
     d[kMNEEMaxOccluders] = mMNEEMaxOccluders;
     d[kMNEEMaxIterations] = mMNEEMaxIterations;
     d[kMNEESolverThreshold] = mMNEESolverThreshold;
+    d[kDoTemporalReuse] = mDoTemporalReuse;
+    d[kDoSpatialReuse] = mDoSpatialReuse;
     return d;
 }
 
@@ -350,6 +356,14 @@ void PLTPT::renderUI(Gui::Widgets& widget) {
     // Sample generator selection.
     if (auto group = widget.group("Sample generator")) {
         dirty |= widget.dropdown("##SampleGenerator", SampleGenerator::getGuiDropdownList(), mSelectedSampleGenerator);
+    }
+
+    // ReSTIR
+    if (auto group = widget.group("ReSTIR")) {
+        dirty |= widget.checkbox("Temporal reuse", mDoTemporalReuse);
+        widget.tooltip("Temporally reuse beams.", true);
+        dirty |= widget.checkbox("Spatial reuse", mDoSpatialReuse);
+        widget.tooltip("Spatially reuse beams.", true);
     }
 
     if (auto group = widget.group("Debug view")) {
@@ -507,7 +521,16 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
         mpScene->raytrace(pRenderContext, mSolveTracer.pProgram.get(),  mSolveTracer.pVars,  { mTileSize, mTileSize, 1 });
     }
 
-    temporalReusePass(pRenderContext, renderData);
+    if (mDoTemporalReuse) {
+        temporalReusePass(pRenderContext, renderData);
+        if (mDoSpatialReuse) {
+            spatialReusePass(pRenderContext, renderData);
+        }
+        else
+        {
+            std::swap(mpReservoirBuffers[0], mpReservoirBuffers[1]);
+        }
+    }
 
     finalizePass(pRenderContext, renderData);
 
@@ -574,6 +597,13 @@ void PLTPT::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pSce
         temporalReuseDesc.setShaderModel(kShaderModel);
         temporalReuseDesc.addShaderLibrary(kTemporalReusePassFilename).csEntry("main");
         mpTemporalReusePass = ComputePass::create(mpDevice, temporalReuseDesc, mpScene->getSceneDefines());
+
+        Program::Desc spatialReuseDesc;
+        spatialReuseDesc.addShaderModules(pScene->getShaderModules());
+        spatialReuseDesc.addTypeConformances(globalTypeConformances);
+        spatialReuseDesc.setShaderModel(kShaderModel);
+        spatialReuseDesc.addShaderLibrary(kSpatialReusePassFilename).csEntry("main");
+        mpSpatialReusePass = ComputePass::create(mpDevice, spatialReuseDesc, mpScene->getSceneDefines());
 
         Program::Desc loadSurfaceDataDesc;
         loadSurfaceDataDesc.addShaderModules(pScene->getShaderModules());
@@ -724,4 +754,28 @@ void PLTPT::finalizePass(RenderContext* pRenderContext, const RenderData& render
     mpFinalizePass["gScene"] = mpScene->getParameterBlock();
 
     mpFinalizePass->execute(pRenderContext, { targetDim, 1u });
+}
+
+void PLTPT::spatialReusePass(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    FALCOR_PROFILE(pRenderContext, "PLTPT::spatialReusePass");
+
+    const uint2& targetDim = renderData.getDefaultTextureDims();
+
+    // Bind resources.
+    auto var = mpSpatialReusePass->getRootVar()["CB"]["gSpatialReusePass"];
+
+    var["gFrameDim"] = targetDim;
+    var["gFrameCount"] = mFrameCount;
+
+    var["gReservoirs"] = mpReservoirBuffers[(mReservoirBufferIndex + 1) % 2];
+    var["gSurfaceData"] = mpSurfaceData[(mReservoirBufferIndex + 1) % 2];
+    var["beamBuffer"] = mpBeamBuffers[(mReservoirBufferIndex + 1) % 2];
+
+    var["gOutReservoirs"] = mpReservoirBuffers[mReservoirBufferIndex];
+    var["outBeamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
+
+    mpSpatialReusePass["gScene"] = mpScene->getParameterBlock();
+
+    mpSpatialReusePass->execute(pRenderContext, { targetDim, 1u });
 }
