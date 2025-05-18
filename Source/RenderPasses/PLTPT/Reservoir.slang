@@ -7,9 +7,6 @@ import Rendering.PLT;
 
 struct PackedReservoir
 {
-    // 40B
-    BounceData bounceData;
-
     // 4x4B
     uint W;
     uint M;
@@ -18,7 +15,6 @@ struct PackedReservoir
 };
 
 struct Reservoir {
-    BounceData bounceData;
     float weightSum; ///< The sum of weights.
     float W; ///< The weight of the reservoir.
     uint M; ///< The number of samples seen so far.
@@ -26,7 +22,6 @@ struct Reservoir {
 
     __init()
     {
-        this.bounceData = {};
         this.weightSum = 0;
         this.W = 0;
         this.M = 0;
@@ -59,7 +54,6 @@ struct Reservoir {
 
         if (isSelected) {
             this.W = targetPDF;
-            this.bounceData = reservoir.bounceData;
             this.beamCount = reservoir.beamCount;
         }
 
@@ -69,8 +63,6 @@ struct Reservoir {
     static Reservoir unpack(const PackedReservoir packedReservoir)
     {
         Reservoir reservoir;
-
-        reservoir.bounceData = packedReservoir.bounceData;
 
         reservoir.W = asfloat(packedReservoir.W);
         reservoir.M = packedReservoir.M;
@@ -90,7 +82,6 @@ struct Reservoir {
     PackedReservoir pack()
     {
         PackedReservoir packedReservoir = {};
-        packedReservoir.bounceData = this.bounceData;
         packedReservoir.W = asuint(this.W);
         packedReservoir.M = this.M;
         packedReservoir.beamCount = this.beamCount;

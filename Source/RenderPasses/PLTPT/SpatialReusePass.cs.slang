@@ -178,7 +178,7 @@ struct SpatialReusePass
         outputReservoir.W = outputReservoir.W > 0.f ? (outputReservoir.weightSum / outputReservoir.M) / (outputReservoir.W) : 0.f;
         outputReservoir.M = min(outputReservoir.M, kMCap);
 
-		// Store reservoir
+	// Store reservoir
         gOutReservoirs[bufferIndex] = outputReservoir.pack();
 	}
 }

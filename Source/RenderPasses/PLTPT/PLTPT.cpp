@@ -49,7 +49,6 @@ namespace {
     const std::string kSamplePassFileName   = "RenderPasses/PLTPT/pltpt_sample.rt.slang";
     const std::string kSolvePassFileName    = "RenderPasses/PLTPT/pltpt_solve.rt.slang";
     const std::string kFinalizePassFileName    = "RenderPasses/PLTPT/pltpt_finalize.cs.slang";
-    const std::string kLoadSurfaceDataPassFilename = "RenderPasses/PLTPT/LoadSurfaceDataPass.cs.slang";
     const std::string kTemporalReusePassFilename = "RenderPasses/PLTPT/TemporalReusePass.cs.slang";
     const std::string kSpatialReusePassFilename = "RenderPasses/PLTPT/SpatialReusePass.cs.slang";
 
@@ -60,7 +59,7 @@ namespace {
     static constexpr uint32_t kShadowPayloadSizeBytes = 20u;
     static constexpr uint32_t kPerBouncePayloadSizeBytes = 40u;
     static constexpr uint32_t kPerBeamPayloadSizeBytes = 160u;
-    static constexpr uint32_t kReservoirPayloadSizeBytes = 56u;
+    static constexpr uint32_t kReservoirPayloadSizeBytes = 16u;
     static constexpr uint32_t kMaxRecursionDepth = 1u;
 
     static constexpr uint kVisibilityRayId = 0;
@@ -494,6 +493,8 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
     };
 
     varSetter(mSampleTracer.pVars->getRootVar());
+    mSampleTracer.pVars->getRootVar()["gSurfaceData"] = mpSurfaceData[mReservoirBufferIndex];
+    mSampleTracer.pVars->getRootVar()["firstBounceBuffer"] = mpFirstBounceBuffer;
     varSetter(mSolveTracer.pVars->getRootVar());
 
 
@@ -508,8 +509,6 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
     for (const auto& channel : kOutputChannels)         bind(channel);
     for (const auto& channel : kSampleOutputChannels)   bind(channel, true, false);
     for (const auto& channel : kSolveOutputChannels)    bind(channel, false, true);
-
-    loadSurfaceDataPass(pRenderContext, renderData);
 
     // Sample
     for (uint x=0;x<tiles.x;++x)
@@ -605,13 +604,6 @@ void PLTPT::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pSce
         spatialReuseDesc.addShaderLibrary(kSpatialReusePassFilename).csEntry("main");
         mpSpatialReusePass = ComputePass::create(mpDevice, spatialReuseDesc, mpScene->getSceneDefines());
 
-        Program::Desc loadSurfaceDataDesc;
-        loadSurfaceDataDesc.addShaderModules(pScene->getShaderModules());
-        loadSurfaceDataDesc.addTypeConformances(globalTypeConformances);
-        loadSurfaceDataDesc.setShaderModel(kShaderModel);
-        loadSurfaceDataDesc.addShaderLibrary(kLoadSurfaceDataPassFilename).csEntry("main");
-        mpLoadSurfaceDataPass = ComputePass::create(mpDevice, loadSurfaceDataDesc, mpScene->getSceneDefines());
-
         Program::Desc finalizePassDesc;
         finalizePassDesc.addShaderModules(pScene->getShaderModules());
         finalizePassDesc.addTypeConformances(globalTypeConformances);
@@ -653,14 +645,22 @@ void PLTPT::createBuffers(RenderContext* pRenderContext, const RenderData& rende
     mpBounceBuffer = nullptr;
     mpReservoirBuffers.clear();
     mpSurfaceData.clear();
+    mpFirstBounceBuffer = nullptr;
+
+    mpBounceBuffer = Buffer::createStructured(
+        this->mpDevice.get(), kPerBouncePayloadSizeBytes, (uint32_t)bounceBufferElements,
+        Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
+    );
+    mpBounceBuffer->setName("PLTPT::mpBounceBuffer");
+
+    mpFirstBounceBuffer = Buffer::createStructured(
+        this->mpDevice.get(), kPerBouncePayloadSizeBytes, (uint32_t)pixelCount,
+        Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
+    );
+    mpFirstBounceBuffer->setName("PLTPT::mpFirstBounceBuffer");
+
     for (uint i = 0; i < 2; ++i)
     {
-        mpBounceBuffer = Buffer::createStructured(
-            this->mpDevice.get(), kPerBouncePayloadSizeBytes, (uint32_t)bounceBufferElements,
-            Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
-        );
-        mpBounceBuffer->setName("PLTPT::mpBounceBuffer_" + std::to_string(i));
-
         mpBeamBuffers.push_back(Buffer::createStructured(
             this->mpDevice.get(), kPerBeamPayloadSizeBytes, (uint32_t)beamBufferElements,
             Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
@@ -678,32 +678,7 @@ void PLTPT::createBuffers(RenderContext* pRenderContext, const RenderData& rende
             Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
         ));
         mpSurfaceData[i]->setName("PLTPT::mpSurfaceData_" + std::to_string(i));
-
-        mpNormalDepth.push_back(Buffer::createStructured(
-            this->mpDevice.get(), sizeof(uint2), pixelCount,
-            Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false));
-        mpNormalDepth[i]->setName("PLTPT::mpNormalDepth_" + std::to_string(i));
     }
-}
-
-void PLTPT::loadSurfaceDataPass(RenderContext* pRenderContext, const RenderData& renderData)
-{
-    FALCOR_PROFILE(pRenderContext, "PLTPT::loadSurfaceDataPass");
-
-    const uint2& targetDim = renderData.getDefaultTextureDims();
-
-    // Bind resources.
-    auto var = mpLoadSurfaceDataPass->getRootVar()["CB"]["gLoadSurfaceDataPass"];
-
-    var["gFrameDim"] = targetDim;
-    var["gFrameCount"] = mFrameCount;
-
-    var["gVBuffer"] = renderData.getTexture(kInputVBuffer);
-    var["gSurfaceData"] = mpSurfaceData[mReservoirBufferIndex];
-    var["gNormalDepth"] = mpNormalDepth[mReservoirBufferIndex];
-
-    mpLoadSurfaceDataPass["gScene"] = mpScene->getParameterBlock();
-    mpLoadSurfaceDataPass->execute(pRenderContext, { targetDim, 1u });
 }
 
 void PLTPT::temporalReusePass(RenderContext* pRenderContext, const RenderData& renderData)
@@ -750,6 +725,7 @@ void PLTPT::finalizePass(RenderContext* pRenderContext, const RenderData& render
 
     var["reservoirBuffer"] = mpReservoirBuffers[mReservoirBufferIndex];
     var["beamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
+    var["firstBounceBuffer"] = mpFirstBounceBuffer;
 
     mpFinalizePass["gScene"] = mpScene->getParameterBlock();
 

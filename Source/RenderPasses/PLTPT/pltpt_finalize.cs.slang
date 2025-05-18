@@ -31,6 +31,7 @@
 
 #include "LightSampling.slangh"
 
+StructuredBuffer<BounceData> firstBounceBuffer;
 
 /** Path measurement */
 
@@ -122,7 +123,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 
     const uint reservoirIdx = pixel.y * kOutputSize.x + pixel.x;
     const Reservoir reservoir = Reservoir::unpack(reservoirBuffer[reservoirIdx]);
-    const BounceData bounce = reservoir.bounceData;
+    const BounceData bounce = firstBounceBuffer[pixel.x + (pixel.y * kOutputSize.x)];
 
     for (int p = 0; p < reservoir.beamCount; ++p)
     {

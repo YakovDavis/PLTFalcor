@@ -89,7 +89,8 @@ private:
     std::vector<Buffer::SharedPtr>           mpBeamBuffers;                 ///< Per-frame plt beam buffers (vector for swap).
 
     std::vector<Buffer::SharedPtr> mpSurfaceData;                    ///< Pointer to the buffer for surface data (current and prev frame).
-    std::vector<Buffer::SharedPtr> mpNormalDepth;                    ///< Pointer to the buffer for normal depth (current and prev frame).
+
+    Buffer::SharedPtr mpFirstBounceBuffer;                       ///< Pointer to the buffer for first bounce data (for entire current frame) for finalize pass
 
     // Configuration
     uint32_t                    mSelectedSampleGenerator = SAMPLE_GENERATOR_DEFAULT;            ///< Which pseudorandom sample generator to use.
@@ -140,7 +141,6 @@ private:
 
     ComputePass::SharedPtr          mpTemporalReusePass;              ///< Compute pass for temporal reuse
     ComputePass::SharedPtr          mpSpatialReusePass;              ///< Compute pass for spatial reuse
-    ComputePass::SharedPtr          mpLoadSurfaceDataPass;              ///< Compute pass for loading surface data
-    ComputePass::SharedPtr          mpFinalizePass;              ///< Compute pass for loading surface data
+    ComputePass::SharedPtr          mpFinalizePass;              ///< Compute pass for final shading
 };
 
