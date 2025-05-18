@@ -29,6 +29,10 @@
 
 #include "pltpt.slangh"
 
+import SurfaceData;
+
+RWStructuredBuffer<PackedSurfaceData> gSurfaceData;
+RWStructuredBuffer<BounceData> firstBounceBuffer;
 
 /** Path construction */
 
@@ -50,6 +54,19 @@ bool pltSampleBSDF<S: ISampleGenerator>(const ShadingData sd,
     if (!valid || bsdfSample.pdf==.0f)
         return false;
     return true;
+}
+
+void recordSurfaceData(const Path path, const ShadingData sd)
+{
+    const uint2 pixel = path.getPixel();
+
+    let lod = ExplicitLodTextureSampler(0.f);
+    let bsdf = gScene.materials.getMaterialInstance(sd, lod);
+    const float3 primaryRayOrigin = gScene.camera.getPosition();
+
+    SurfaceData surfaceData = SurfaceData::create(sd, bsdf, primaryRayOrigin);
+
+    gSurfaceData[pixel.x + pixel.y * kOutputSize.x] = surfaceData.pack();
 }
 
 [shader("miss")]
@@ -79,6 +96,10 @@ void scatterTriangleMeshClosestHit(inout Path path, BuiltInTriangleIntersectionA
     const ShadingData sd = gScene.materials.prepareShadingData(v, materialID, wi, lod);
     let bsdf = gScene.materials.getMaterialInstance(sd, lod);
     const BSDFProperties bsdfProp = bsdf.getProperties(sd);
+
+    if (path.length == 0) {
+        recordSurfaceData(path, sd);
+    }
 
     if (kAlphaMasking && sd.opacity == .0f) {
         // Alpha mask
@@ -126,15 +147,18 @@ void scatterTriangleMeshClosestHit(inout Path path, BuiltInTriangleIntersectionA
     path.pdf *= bsdfSample.pdf;
     // A dispersive delta lobe means that this path now transports a single wavelength (HWSS off)
     path.flags.dispersiveDeltaSegment |= isDispersive;
+
     // Store bounce
     appendBounce(path, hitInfo, wi, bsdfSample.lobe);
     ++path.length;
+
     // Keep track of MIS stuff
     path.lastNonDeltaPdf = !isDelta ? bsdfSample.pdf : path.lastNonDeltaPdf;
     path.flags.MSCompatibleBounces = isMSCompatible ? path.flags.MSCompatibleBounces+1 : 0u;
     path.flags.lastBounceWasDelta = isDelta;
     path.flags.onlyDelta = path.flags.onlyDelta && isDelta;
     path.normal = sd.N;
+
     // Next ray tracing direction
     path.origin = sd.computeNewRayOrigin(isReflection);
     path.dir = bsdfSample.wo;
@@ -182,4 +206,6 @@ void main() {
             path
         );
     }
+
+    firstBounceBuffer[pixel.x + pixel.y * kOutputSize.x] = readBounce(0, pixel);
 }

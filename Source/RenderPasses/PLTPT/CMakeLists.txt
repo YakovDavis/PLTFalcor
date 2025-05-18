@@ -20,7 +20,6 @@ target_sources(PLTPT PRIVATE
     ColourCoding.slang
 
     SurfaceData.slang
-    LoadSurfaceDataPass.cs.slang
     ReSTIRHelperFunctions.slang
     Reservoir.slang
     TemporalReusePass.cs.slang

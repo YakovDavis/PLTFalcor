@@ -422,11 +422,6 @@ void main() {
     for (int p=0;;++p) {
         const BounceData bounce = readBounce(p, pixel);
 
-        // Record first bounce data
-        if (p == 0) {
-            reservoir.bounceData = bounce;
-        }
-
         // Miss?
         if (bounce.flags.miss) {
             onMiss(solveData, p, bounce, pixel, reservoir);
