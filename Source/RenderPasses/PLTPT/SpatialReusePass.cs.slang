@@ -22,10 +22,10 @@ struct SpatialReusePass
     static const float kNormalThreshold = 0.5f;
     static const float kMinRadius = 100.f;
 
-	uint2   gFrameDim; ///< Frame dimensions.
-	uint    gFrameCount; ///< Frame count since scene was loaded.
+    uint2   gFrameDim; ///< Frame dimensions.
+    uint    gFrameCount; ///< Frame count since scene was loaded.
 
-	// Resources
+    // Resources
     StructuredBuffer<PackedReservoir> gReservoirs; ///< Buffer with packed reservoirs.
     StructuredBuffer<PackedPLTBeam> beamBuffer; ///< Buffer with packed PLT beams.
     StructuredBuffer<PackedSurfaceData> gSurfaceData; ///< Surface data for the current frame.
@@ -91,8 +91,8 @@ struct SpatialReusePass
         {
             uint2 neighborPixel = getRandomNeighborPixel(pixel, sg1, radius);
 
-			// Discard pixel if out of bounds
-			if(any(neighborPixel >= gFrameDim) || any(neighborPixel < 0))
+            // Discard pixel if out of bounds
+	    if(any(neighborPixel >= gFrameDim) || any(neighborPixel < 0))
                 continue;
 
             uint neighborBufferIndex = getBufferIndex(neighborPixel, gFrameDim);
@@ -143,7 +143,7 @@ struct SpatialReusePass
             q1q2 = normalize(q1q2);
 
             /*float cosA = dot(surfaceData.normal, r1q2);
-            float cosB = dot(neighborLightSample.surfaceNormal, q1q2);
+            float cosB = dot(neighborLightSample.sampleNormal, q1q2);
             float cosPhiA = -dot(r1q2, neighborLightSample.sampleNormal);
             float cosPhiB = -dot(q1q2, neighborLightSample.sampleNormal);
             if (cosB <= 0.f || cosPhiB <= 0.f) {
