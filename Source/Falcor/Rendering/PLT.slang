@@ -77,7 +77,7 @@ struct PLTCoherence {
     }
 };
 
-// 160 bytes
+// 176 bytes
 struct PackedPLTBeam {
     // 4x16B
     uint4 L;
@@ -96,6 +96,7 @@ struct PackedPLTBeam {
     uint4 posW_distant;
     uint4 r_hwss_comps;
     uint4 t;
+    uint4 lastHitNormal;
 }
 
 // Units:
@@ -119,6 +120,8 @@ struct PLTBeam {
     float3 t;                   ///< Beam tangent (direction of horizontal linear polarization)
     bool distant = false;
 
+    float3 lastHitNormal;
+
     __init(hwss_t Le, const float2x2 Diffusivity, float3 posW, float3 dir, float3 tangent, hwss_t wavelengths, bool distant = false, uint hwssComps = hwss_samples) {
         this.hwss_comps = hwssComps;
         this.wavelengths = wavelengths;
@@ -133,6 +136,8 @@ struct PLTBeam {
         this.r = dir;
         this.t = tangent;
         this.distant = distant;
+
+        this.lastHitNormal = float3(.0f);
     }
 
     PackedPLTBeam pack() {
@@ -151,6 +156,8 @@ struct PLTBeam {
         b.r_hwss_comps = uint4(asuint(this.r.x), asuint(this.r.y), asuint(this.r.z), this.hwss_comps);
         b.posW_distant = uint4(asuint(this.posW.x), asuint(this.posW.y), asuint(this.posW.z), this.distant ? 1u :0u);
         b.t = uint4(asuint(this.t.x), asuint(this.t.y), asuint(this.t.z), 0u);
+
+        b.lastHitNormal = uint4(asuint(this.lastHitNormal.x), asuint(this.lastHitNormal.y), asuint(this.lastHitNormal.z), 0u);
 
         return b;
     }
@@ -180,6 +187,8 @@ struct PLTBeam {
         b.r = asfloat(packedPltBeam.r_hwss_comps.xyz);
         b.t = asfloat(packedPltBeam.t.xyz);
         b.distant = packedPltBeam.posW_distant.w > 0u;
+
+        b.lastHitNormal = asfloat(packedPltBeam.lastHitNormal.xyz);
 
         return b;
     }
@@ -320,6 +329,23 @@ struct PLTBeam {
         for (int p = 0; p < hwss_comps; ++p)
         {
             Result += L[p];
+        }
+        return Result;
+    }
+
+    float wavelengthWeight(float wavelength)
+    {
+        const float maxIntensityWavelength = 500.0f;
+        return 1.0f - exp(-(wavelength - maxIntensityWavelength) * (wavelength - maxIntensityWavelength) * 0.0001f);
+    }
+
+    float getRestirPdfWeighted()
+    {
+        float Result = 0.f;
+        [unroll]
+        for (int p = 0; p < hwss_comps; ++p)
+        {
+            Result += L[p] * wavelengthWeight(wavelengths[p]);
         }
         return Result;
     }

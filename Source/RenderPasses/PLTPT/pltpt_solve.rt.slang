@@ -54,6 +54,8 @@ void forwardUnwindStep(const TriangleHit triangleHit,
     const uint materialID = gScene.getMaterialID(triangleHit.instanceID);
     const ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -beam.r, lod);
 
+    beam.lastHitNormal = sd.N;
+
     // Propagate
     beam.propagate(sd.posW);
 
@@ -465,6 +467,8 @@ void main() {
         solveData.pathNormal = sd.N;
     }
 
+
+    reservoir.weightSum = reservoir.W;
     reservoir.M = 1;
 
     const uint reservoirIdx = pixel.x + pixel.y * kOutputSize.x;

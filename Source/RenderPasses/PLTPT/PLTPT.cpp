@@ -58,7 +58,7 @@ namespace {
     static constexpr uint32_t kBasePayloadSizeBytes = 84u;
     static constexpr uint32_t kShadowPayloadSizeBytes = 20u;
     static constexpr uint32_t kPerBouncePayloadSizeBytes = 40u;
-    static constexpr uint32_t kPerBeamPayloadSizeBytes = 160u;
+    static constexpr uint32_t kPerBeamPayloadSizeBytes = 176u;
     static constexpr uint32_t kReservoirPayloadSizeBytes = 16u;
     static constexpr uint32_t kMaxRecursionDepth = 1u;
 

@@ -121,7 +121,8 @@ struct TemporalReusePass
         // Move beams from prev to current if prev chosen
         if (currentChosen)
         {
-            for (int p = 0; p < prevReservoir.beamCount; ++p) {
+            for (int p = 0; p < 4; ++p) // TODO: un-hardcode max beam count
+            {
                 prevBeamBuffer[beam0Idx + p] = beamBuffer[beam0Idx + p];
             }
         }
