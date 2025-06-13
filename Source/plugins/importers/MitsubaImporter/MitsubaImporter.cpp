@@ -836,9 +836,7 @@ namespace Falcor
                     anim->addKeyframe(keyframe);
                 }
             }
-            if (anim) {
-                sensor.pCamera->setIsAnimated(true);
-            }
+            sensor.pCamera->setIsAnimated(anim != nullptr);
 
             return sensor;
         }
@@ -1002,9 +1000,9 @@ namespace Falcor
                                 memcpy(&TransformMatrix[r], &sensor.transform[r], 4 * sizeof(float));
                             }
 
-                            // SceneBuilder::Node node{id, TransformMatrix};
-                            // auto nodeID = ctx.builder.addNode(node);
-                            // sensor.pCamera->setNodeID(nodeID);
+                            SceneBuilder::Node node{id, rmcv::toRMCV(sensor.transform)};
+                            auto nodeID = ctx.builder.addNode(node);
+                            sensor.pCamera->setNodeID(nodeID);
                             ctx.builder.addCamera(sensor.pCamera);
                         }
                     }

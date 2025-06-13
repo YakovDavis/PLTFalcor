@@ -102,7 +102,7 @@ private:
 
     bool                        mDoImportanceSampleEmitters = true;
 
-    bool                        mDoMNEE = true;
+    bool                        mDoMNEE = false;
     uint                        mMNEEMaxOccluders = 2;
     uint                        mMNEEMaxIterations = 60;
     float                       mMNEESolverThreshold = 5e-5f;
