@@ -70,7 +70,7 @@ struct SpatialReusePass
         float currReservoirTargetPDF = 0.f;
         const uint currBeam0Idx = (pixel.x + (pixel.y * gFrameDim.x)) * 4; // TODO: kMaxBeamCount;
         for (int p = 0; p < currentReservoir.beamCount; ++p) {
-            PLTBeam b = PLTBeam::unpack(beamBuffer[currBeam0Idx + p]);
+            PLTBeam b = PLTBeam::unpack(beamBuffer[currBeam0Idx + p], currentReservoir.posW, currentReservoir.r, currentReservoir.lastHitNormal);
             currReservoirTargetPDF += b.getRestirPdf();
         }
         bool currChosen = outputReservoir.update(currentReservoir, currReservoirTargetPDF, sg);
@@ -122,7 +122,7 @@ struct SpatialReusePass
             float3 neighborSamplePoint = float3(0.f);
             float3 neighborSampleNormal = float3(0.f);
             for (int p = 0; p < neighborReservoir.beamCount; ++p) {
-                PLTBeam b = PLTBeam::unpack(beamBuffer[neighborBeam0Idx + p]);
+                PLTBeam b = PLTBeam::unpack( beamBuffer[neighborBeam0Idx + p], neighborReservoir.posW, neighborReservoir.r, neighborReservoir.lastHitNormal);
                 if (p == 0) // Record a (shared) beam position to compute Jacobian
                 {
                     neighborSamplePoint = b.posW;
@@ -192,7 +192,7 @@ struct SpatialReusePass
         outputReservoir.W = outputReservoir.W > 0.f ? (outputReservoir.weightSum / outputReservoir.M) / (outputReservoir.W) : 0.f;
         outputReservoir.M = min(outputReservoir.M, kMCap);
 
-	// Store reservoir
+	    // Store reservoir
         gOutReservoirs[bufferIndex] = outputReservoir.pack();
     }
 }

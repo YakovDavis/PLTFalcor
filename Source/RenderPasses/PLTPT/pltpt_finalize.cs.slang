@@ -127,7 +127,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 
     for (int p = 0; p < reservoir.beamCount; ++p)
     {
-        PLTBeam beam = PLTBeam::unpack(beamBuffer[beam0Idx + p]);
+        PLTBeam beam = PLTBeam::unpack(beamBuffer[beam0Idx + p], reservoir.posW, reservoir.r, reservoir.lastHitNormal);
         unwindLastStep(bounce, pixel, beam);
         finalColor += measure(bounce.pathContribution, beam);
     }

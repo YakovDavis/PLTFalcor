@@ -173,12 +173,6 @@ void appendBounce(inout Path path, const float3 wi) {
     appendBounce(path, info, wi, 0);
 }
 
-PLTBeam readBeam(const int p, const uint2 pixel)
-{
-    const uint idx = (pixel.x + pixel.y * kOutputSize.x) * kMaxBeamCount + p;
-    return PLTBeam::unpack(beamBuffer[idx]);
-}
-
 bool appendBeam(const PLTBeam beam, const uint2 pixel, inout Reservoir reservoir)
 {
     const uint beamCount = reservoir.beamCount;
@@ -190,6 +184,9 @@ bool appendBeam(const PLTBeam beam, const uint2 pixel, inout Reservoir reservoir
     beamBuffer[idx] = beam.pack();
     reservoir.beamCount = beamCount + 1;
     reservoir.W += beam.getRestirPdf();
+    reservoir.posW = beam.posW;
+    reservoir.r = beam.r;
+    reservoir.lastHitNormal = beam.lastHitNormal;
     return true;
 }
 

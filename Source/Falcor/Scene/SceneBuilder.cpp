@@ -974,15 +974,15 @@ namespace Falcor
         SampledSpectrum<float> n(1.f), k(.0f);
         if (name != "none")
         {
-            n = SampledSpectrum<float>{ PiecewiseLinearSpectrum::fromFile(std::filesystem::path(_PROJECT_DIR_) / "../Tables/ior/" / (name + ".eta.spd")) };
-            k = SampledSpectrum<float>{ PiecewiseLinearSpectrum::fromFile(std::filesystem::path(_PROJECT_DIR_) / "../Tables/ior" / (name + ".k.spd")) };
+            n = SampledSpectrum<float>{ PiecewiseLinearSpectrum::fromFile(getRuntimeDirectory() / "Tables/ior/" / (name + ".eta.spd")) };
+            k = SampledSpectrum<float>{ PiecewiseLinearSpectrum::fromFile(getRuntimeDirectory() / "Tables/ior" / (name + ".k.spd")) };
         }
 
         return std::make_pair(addSpectralProfile(n, false), addSpectralProfile(k, false));
     }
     SpectralProfileID SceneBuilder::addSpectralProfileForEmitterType(const std::string& name, float scale)
     {
-        const auto dir = std::filesystem::path(_PROJECT_DIR_) / "../Tables/emission/";
+        const auto dir = getRuntimeDirectory() / "Tables/emission/";
         for (auto const& file : std::filesystem::directory_iterator{ dir })
         {
             if (file.is_regular_file() && file.path().filename().string() == name + ".spd")

@@ -100,7 +100,7 @@ struct TemporalReusePass
         float prevTargetPdf = 0.f;
         const uint prevBeam0Idx = (prevPixel.x + (prevPixel.y * gFrameDim.x)) * 4; // TODO: kMaxBeamCount;
         for (int p = 0; p < prevReservoir.beamCount; ++p) {
-            PLTBeam b = PLTBeam::unpack(prevBeamBuffer[prevBeam0Idx + p]);
+            PLTBeam b = PLTBeam::unpack(prevBeamBuffer[prevBeam0Idx + p], prevReservoir.posW, prevReservoir.r, prevReservoir.lastHitNormal);
             prevTargetPdf += b.getRestirPdf();
         }
         bool prevChosen = outputReservoir.update(prevReservoir, prevTargetPdf, sg);
@@ -108,7 +108,7 @@ struct TemporalReusePass
         float targetPdf = 0.f;
         const uint beam0Idx = (pixel.x + (pixel.y * gFrameDim.x)) * 4; // TODO: kMaxBeamCount;
         for (int p = 0; p < currentReservoir.beamCount; ++p) {
-            PLTBeam b = PLTBeam::unpack(beamBuffer[beam0Idx + p]);
+            PLTBeam b = PLTBeam::unpack(beamBuffer[beam0Idx + p], currentReservoir.posW, currentReservoir.r, currentReservoir.lastHitNormal);
             targetPdf += b.getRestirPdf();
         }
         bool currentChosen = outputReservoir.update(currentReservoir, targetPdf, sg);

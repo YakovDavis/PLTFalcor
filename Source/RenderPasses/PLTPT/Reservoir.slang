@@ -5,13 +5,18 @@ import Path;
 import Utils.Sampling.SampleGenerator;
 import Rendering.PLT;
 
+// 48 bytes
 struct PackedReservoir
 {
     // 4x4B
-    uint W;
+    float W;
     uint M;
     uint beamCount;
-    uint _pad;
+    float lastHitNormal_x;
+
+    // 2x16B
+    float4 posW_lastHitNormal_y;
+    float4 r_lastHitNormal_z;
 };
 
 struct Reservoir {
@@ -19,6 +24,10 @@ struct Reservoir {
     float W; ///< The weight of the reservoir.
     uint M; ///< The number of samples seen so far.
     uint beamCount;
+
+    float3 posW;
+    float3 r;
+    float3 lastHitNormal;
 
     __init()
     {
@@ -55,6 +64,9 @@ struct Reservoir {
         if (isSelected) {
             this.W = targetPDF;
             this.beamCount = reservoir.beamCount;
+            this.posW = reservoir.posW;
+            this.r = reservoir.r;
+            this.lastHitNormal = reservoir.lastHitNormal;
         }
 
         return isSelected;
@@ -64,7 +76,7 @@ struct Reservoir {
     {
         Reservoir reservoir;
 
-        reservoir.W = asfloat(packedReservoir.W);
+        reservoir.W = packedReservoir.W;
         reservoir.M = packedReservoir.M;
         reservoir.weightSum = reservoir.M * reservoir.W;
 
@@ -76,15 +88,22 @@ struct Reservoir {
 
         reservoir.beamCount = packedReservoir.beamCount;
 
+        reservoir.posW = packedReservoir.posW_lastHitNormal_y.xyz;
+        reservoir.r = packedReservoir.r_lastHitNormal_z.xyz;
+        reservoir.lastHitNormal = float3(packedReservoir.lastHitNormal_x, packedReservoir.posW_lastHitNormal_y.w, packedReservoir.r_lastHitNormal_z.w);
+
         return reservoir;
     }
 
     PackedReservoir pack()
     {
         PackedReservoir packedReservoir = {};
-        packedReservoir.W = asuint(this.W);
+        packedReservoir.W = this.W;
         packedReservoir.M = this.M;
         packedReservoir.beamCount = this.beamCount;
+        packedReservoir.lastHitNormal_x = this.lastHitNormal.x;
+        packedReservoir.posW_lastHitNormal_y = float4(this.posW, this.lastHitNormal.y);
+        packedReservoir.r_lastHitNormal_z = float4(this.r, this.lastHitNormal.z);
         return packedReservoir;
     }
 }

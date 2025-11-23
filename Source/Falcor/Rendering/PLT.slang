@@ -77,26 +77,28 @@ struct PLTCoherence {
     }
 };
 
-// 176 bytes
+// 80 bytes
 struct PackedPLTBeam {
-    // 4x16B
-    uint4 L;
-    uint4 L1;
-    uint4 L2;
-    uint4 L3;
+    // 4x8B
+    half4 L;
+    half4 L1;
+    half4 L2;
+    half4 L3;
 
-    // 2x16B
-    uint4 wavelengths;
-    uint4 spectralPDFs;
+    // 2x8B
+    half4 wavelengths;
+    half4 spectralPDFs;
 
     // 16B
-    uint4 packedTheta;
+    float4 packedTheta;
 
-    // 3x16B
-    uint4 posW_distant;
-    uint4 r_hwss_comps;
-    uint4 t;
-    uint4 lastHitNormal;
+    // 16B
+    float4 t_distant_hwss_comps; // xyz - t, w - uint16 distant uint16 hwss_comps
+
+    // can be stored in reservoir and fetched from there
+    //uint4 posW_distant;
+    //uint4 r_hwss_comps;
+    //uint4 lastHitNormal;
 }
 
 // Units:
@@ -143,52 +145,51 @@ struct PLTBeam {
     PackedPLTBeam pack() {
         PackedPLTBeam b = {};
 
-        b.L = uint4(asuint(this.L[0]), asuint(this.L[1]), asuint(this.L[2]), asuint(this.L[3]));
-        b.L1 = uint4(asuint(this.L1[0]), asuint(this.L1[1]), asuint(this.L1[2]), asuint(this.L1[3]));
-        b.L2 = uint4(asuint(this.L2[0]), asuint(this.L2[1]), asuint(this.L2[2]), asuint(this.L2[3]));
-        b.L3 = uint4(asuint(this.L3[0]), asuint(this.L3[1]), asuint(this.L3[2]), asuint(this.L3[3]));
+        b.L = half4(half(this.L[0]), half(this.L[1]), half(this.L[2]), half(this.L[3]));
+        b.L1 = half4(half(this.L1[0]), half(this.L1[1]), half(this.L1[2]), half(this.L1[3]));
+        b.L2 = half4(half(this.L2[0]), half(this.L2[1]), half(this.L2[2]), half(this.L2[3]));
+        b.L3 = half4(half(this.L3[0]), half(this.L3[1]), half(this.L3[2]), half(this.L3[3]));
 
-        b.wavelengths = uint4(asuint(this.wavelengths[0]), asuint(this.wavelengths[1]), asuint(this.wavelengths[2]), asuint(this.wavelengths[3]));
-        b.spectralPDFs = uint4(asuint(this.spectralPDFs[0]), asuint(this.spectralPDFs[1]), asuint(this.spectralPDFs[2]), asuint(this.spectralPDFs[3]));
+        b.wavelengths = half4(half(this.wavelengths[0]), half(this.wavelengths[1]), half(this.wavelengths[2]), half(this.wavelengths[3]));
+        b.spectralPDFs = half4(half(this.spectralPDFs[0]), half(this.spectralPDFs[1]), half(this.spectralPDFs[2]), half(this.spectralPDFs[3]));
 
-        b.packedTheta = uint4(asuint(this.Theta.D.x), asuint(this.Theta.D.y), asuint(this.Theta.D.z), asuint(this.Theta.r_m));
+        b.packedTheta = float4(this.Theta.D.x, this.Theta.D.y, this.Theta.D.z, this.Theta.r_m);
 
-        b.r_hwss_comps = uint4(asuint(this.r.x), asuint(this.r.y), asuint(this.r.z), this.hwss_comps);
-        b.posW_distant = uint4(asuint(this.posW.x), asuint(this.posW.y), asuint(this.posW.z), this.distant ? 1u :0u);
-        b.t = uint4(asuint(this.t.x), asuint(this.t.y), asuint(this.t.z), 0u);
-
-        b.lastHitNormal = uint4(asuint(this.lastHitNormal.x), asuint(this.lastHitNormal.y), asuint(this.lastHitNormal.z), 0u);
+        uint distant_hwss_comps = (distant ? 0x00010000u : 0u) | (hwss_comps & 0x0000FFFFu);
+        b.t_distant_hwss_comps = float4(this.t.x, this.t.y, this.t.z, asfloat(distant_hwss_comps));
 
         return b;
     }
 
-    static PLTBeam unpack(const PackedPLTBeam packedPltBeam) {
+    static PLTBeam unpack(const PackedPLTBeam packedPltBeam, float3 posW, float3 r, float3 lastHitNormal) {
         PLTBeam b;
 
         b.L = hwss_t(0.f);
-        b.L[0] = asfloat(packedPltBeam.L.x); b.L[1] = asfloat(packedPltBeam.L.y); b.L[2] = asfloat(packedPltBeam.L.z); b.L[3] = asfloat(packedPltBeam.L.w);
+        b.L[0] = float(packedPltBeam.L.x); b.L[1] = float(packedPltBeam.L.y); b.L[2] = float(packedPltBeam.L.z); b.L[3] = float(packedPltBeam.L.w);
         b.L1 = hwss_t(0.f);
-        b.L1[0] = asfloat(packedPltBeam.L1.x); b.L1[1] = asfloat(packedPltBeam.L1.y); b.L1[2] = asfloat(packedPltBeam.L1.z); b.L1[3] = asfloat(packedPltBeam.L1.w);
+        b.L1[0] = float(packedPltBeam.L1.x); b.L1[1] = float(packedPltBeam.L1.y); b.L1[2] = float(packedPltBeam.L1.z); b.L1[3] = float(packedPltBeam.L1.w);
         b.L2 = hwss_t(0.f);
-        b.L2[0] = asfloat(packedPltBeam.L2.x); b.L2[1] = asfloat(packedPltBeam.L2.y); b.L2[2] = asfloat(packedPltBeam.L2.z); b.L2[3] = asfloat(packedPltBeam.L2.w);
+        b.L2[0] = float(packedPltBeam.L2.x); b.L2[1] = float(packedPltBeam.L2.y); b.L2[2] = float(packedPltBeam.L2.z); b.L2[3] = float(packedPltBeam.L2.w);
         b.L3 = hwss_t(0.f);
-        b.L3[0] = asfloat(packedPltBeam.L3.x); b.L3[1] = asfloat(packedPltBeam.L3.y); b.L3[2] = asfloat(packedPltBeam.L3.z); b.L3[3] = asfloat(packedPltBeam.L3.w);
+        b.L3[0] = float(packedPltBeam.L3.x); b.L3[1] = float(packedPltBeam.L3.y); b.L3[2] = float(packedPltBeam.L3.z); b.L3[3] = float(packedPltBeam.L3.w);
 
         b.wavelengths = hwss_t(0.f);
-        b.wavelengths[0] = asfloat(packedPltBeam.wavelengths.x); b.wavelengths[1] = asfloat(packedPltBeam.wavelengths.y); b.wavelengths[2] = asfloat(packedPltBeam.wavelengths.z); b.wavelengths[3] = asfloat(packedPltBeam.wavelengths.w);
+        b.wavelengths[0] = float(packedPltBeam.wavelengths.x); b.wavelengths[1] = float(packedPltBeam.wavelengths.y); b.wavelengths[2] = float(packedPltBeam.wavelengths.z); b.wavelengths[3] = float(packedPltBeam.wavelengths.w);
         b.spectralPDFs = hwss_t(0.f);
-        b.spectralPDFs[0] = asfloat(packedPltBeam.spectralPDFs.x); b.spectralPDFs[1] = asfloat(packedPltBeam.spectralPDFs.y); b.spectralPDFs[2] = asfloat(packedPltBeam.spectralPDFs.z); b.spectralPDFs[3] = asfloat(packedPltBeam.spectralPDFs.w);
+        b.spectralPDFs[0] = float(packedPltBeam.spectralPDFs.x); b.spectralPDFs[1] = float(packedPltBeam.spectralPDFs.y); b.spectralPDFs[2] = float(packedPltBeam.spectralPDFs.z); b.spectralPDFs[3] = float(packedPltBeam.spectralPDFs.w);
 
-        b.Theta.D = asfloat(packedPltBeam.packedTheta.xyz);
-        b.Theta.r_m = asfloat(packedPltBeam.packedTheta.w);
+        b.Theta.D = float3(packedPltBeam.packedTheta.xyz);
+        b.Theta.r_m = float(packedPltBeam.packedTheta.w);
 
-        b.posW = asfloat(packedPltBeam.posW_distant.xyz);
-        b.hwss_comps = packedPltBeam.r_hwss_comps.w > 0u;
-        b.r = asfloat(packedPltBeam.r_hwss_comps.xyz);
-        b.t = asfloat(packedPltBeam.t.xyz);
-        b.distant = packedPltBeam.posW_distant.w > 0u;
+        b.posW = posW;
+        b.r = r;
 
-        b.lastHitNormal = asfloat(packedPltBeam.lastHitNormal.xyz);
+        b.t = float3(packedPltBeam.t_distant_hwss_comps.xyz);
+        uint distant_hwss_comps = asuint(packedPltBeam.t_distant_hwss_comps.w);
+        b.hwss_comps = distant_hwss_comps > 0u ? 4 : 0; // distant_hwss_comps & 0x0000FFFFu; TODO: Fix, idk why this crashes
+        b.distant = (distant_hwss_comps >> 16) > 0u;
+
+        b.lastHitNormal = lastHitNormal;
 
         return b;
     }
@@ -342,7 +343,6 @@ struct PLTBeam {
     float getRestirPdfWeighted()
     {
         float Result = 0.f;
-        [unroll]
         for (int p = 0; p < hwss_comps; ++p)
         {
             Result += L[p] * wavelengthWeight(wavelengths[p]);

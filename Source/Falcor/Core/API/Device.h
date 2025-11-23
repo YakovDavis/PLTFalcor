@@ -42,7 +42,9 @@
 #include <array>
 #include <list>
 #include <memory>
+#define _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR
 #include <mutex>
+#undef _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR
 #include <queue>
 #include <vector>
 

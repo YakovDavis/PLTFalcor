@@ -54,14 +54,7 @@ const std::string& getExecutableName()
 
 inline std::vector<std::filesystem::path> getInitialShaderDirectories()
 {
-    std::filesystem::path projectDir(_PROJECT_DIR_);
-
     std::vector<std::filesystem::path> developmentDirectories = {
-        // First we search in source folders.
-        projectDir,
-        projectDir / "..",
-        projectDir / ".." / "Tools" / "FalcorTest",
-        // Then we search in deployment folder (necessary to pickup NVAPI and other third-party shaders).
         getRuntimeDirectory() / "shaders",
     };
 
@@ -76,10 +69,7 @@ static std::vector<std::filesystem::path> gShaderDirectories = getInitialShaderD
 
 inline std::vector<std::filesystem::path> getInitialDataDirectories()
 {
-    std::filesystem::path projectDir(_PROJECT_DIR_);
-
     std::vector<std::filesystem::path> developmentDirectories = {
-        projectDir / ".." / ".." / "data",
         getRuntimeDirectory() / "data",
     };
 
@@ -88,7 +78,7 @@ inline std::vector<std::filesystem::path> getInitialDataDirectories()
     std::vector<std::filesystem::path> directories = isDevelopmentMode() ? developmentDirectories : deploymentDirectories;
 
     // Add development media folder.
-    directories.push_back(projectDir / ".." / ".." / "media");
+    directories.push_back(getRuntimeDirectory()/ "media");
 
     // Add additional media folders.
     if (auto mediaFolders = getEnvironmentVariable("FALCOR_MEDIA_FOLDERS"))
