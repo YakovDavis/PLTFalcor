@@ -51,6 +51,8 @@ namespace {
     const std::string kFinalizePassFileName    = "RenderPasses/PLTPT/pltpt_finalize.cs.slang";
     const std::string kTemporalReusePassFilename = "RenderPasses/PLTPT/TemporalReusePass.cs.slang";
     const std::string kSpatialReusePassFilename = "RenderPasses/PLTPT/SpatialReusePass.cs.slang";
+    const std::string kTemporalReuseGIPassFilename = "RenderPasses/PLTPT/TemporalReuseGIPass.cs.slang";
+    const std::string kSpatialReuseGIPassFilename = "RenderPasses/PLTPT/SpatialReuseGIPass.cs.slang";
 
     const std::string kShaderModel = "6_5";
 
@@ -59,7 +61,8 @@ namespace {
     static constexpr uint32_t kShadowPayloadSizeBytes = 20u;
     static constexpr uint32_t kPerBouncePayloadSizeBytes = 40u;
     static constexpr uint32_t kPerBeamPayloadSizeBytes = 80u;
-    static constexpr uint32_t kReservoirPayloadSizeBytes = 48u;
+    static constexpr uint32_t kReservoirPayloadSizeBytes = 112u;
+    static constexpr uint32_t kReservoirGIPayloadSizeBytes = 48u;
     static constexpr uint32_t kMaxRecursionDepth = 1u;
 
     static constexpr uint kVisibilityRayId = 0;
@@ -143,6 +146,8 @@ namespace {
 
     const std::string kDoTemporalReuse = "doTemporalReuse";
     const std::string kDoSpatialReuse = "doSpatialReuse";
+    const std::string kDoTemporalReuseGI = "doTemporalReuseGI";
+    const std::string kDoSpatialReuseGI = "doSpatialReuseGI";
 }
 
 PLTPT::PLTPT(std::shared_ptr<Device> pDevice) : RenderPass(std::move(pDevice)) {}
@@ -181,6 +186,8 @@ void PLTPT::parseDictionary(const Dictionary& dict) {
         else if (key == kMNEESolverThreshold) mMNEESolverThreshold = value;
         else if (key == kDoTemporalReuse) mDoTemporalReuse = value;
         else if (key == kDoSpatialReuse) mDoSpatialReuse = value;
+        else if (key == kDoTemporalReuseGI) mDoTemporalReuseGI = value;
+        else if (key == kDoSpatialReuseGI) mDoSpatialReuseGI = value;
         else logError("Unknown field '{}' in PLTPathTracer dictionary.", key);
     }
 }
@@ -213,6 +220,8 @@ Dictionary PLTPT::getScriptingDictionary() {
     d[kMNEESolverThreshold] = mMNEESolverThreshold;
     d[kDoTemporalReuse] = mDoTemporalReuse;
     d[kDoSpatialReuse] = mDoSpatialReuse;
+    d[kDoTemporalReuseGI] = mDoTemporalReuseGI;
+    d[kDoSpatialReuseGI] = mDoSpatialReuseGI;
     return d;
 }
 
@@ -363,6 +372,10 @@ void PLTPT::renderUI(Gui::Widgets& widget) {
         widget.tooltip("Temporally reuse beams.", true);
         dirty |= widget.checkbox("Spatial reuse", mDoSpatialReuse);
         widget.tooltip("Spatially reuse beams.", true);
+        dirty |= widget.checkbox("Temporal reuse GI", mDoTemporalReuseGI);
+        widget.tooltip("Temporally reuse beams (GI).", true);
+        dirty |= widget.checkbox("Spatial reuse GI", mDoSpatialReuseGI);
+        widget.tooltip("Spatially reuse beams (GI).", true);
     }
 
     if (auto group = widget.group("Debug view")) {
@@ -487,8 +500,9 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
         if (mDebugView != 0)
             var["CB"]["kDebugViewIntensity"] = mDebugViewIntensity;
 
-        var["bounceBuffer"] = mpBounceBuffer;
         var["reservoirBuffer"] = mpReservoirBuffers[mReservoirBufferIndex];
+        var["bounceBuffer"] = mpBounceBuffer;
+        var["reservoirGIBuffer"] = mpReservoirGIBuffers[mReservoirBufferIndex];
         var["beamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
     };
 
@@ -531,6 +545,17 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
         }
     }
 
+    if (mDoTemporalReuseGI) {
+        temporalReuseGIPass(pRenderContext, renderData);
+        if (mDoSpatialReuseGI) {
+            spatialReuseGIPass(pRenderContext, renderData);
+        }
+        else
+        {
+            std::swap(mpReservoirGIBuffers[0], mpReservoirGIBuffers[1]);
+        }
+    }
+
     finalizePass(pRenderContext, renderData);
 
     mReservoirBufferIndex = (mReservoirBufferIndex + 1) % 2;
@@ -544,7 +569,7 @@ void PLTPT::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pSce
     mpEnvMapSampler = nullptr;
     mpSampleGenerator = nullptr;
 
-    mpTemporalReusePass = nullptr;
+    mpTemporalReuseGIPass = nullptr;
 
     mpScene = pScene;
 
@@ -604,6 +629,20 @@ void PLTPT::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pSce
         spatialReuseDesc.addShaderLibrary(kSpatialReusePassFilename).csEntry("main");
         mpSpatialReusePass = ComputePass::create(mpDevice, spatialReuseDesc, mpScene->getSceneDefines());
 
+        Program::Desc temporalReuseGIDesc;
+        temporalReuseGIDesc.addShaderModules(pScene->getShaderModules());
+        temporalReuseGIDesc.addTypeConformances(globalTypeConformances);
+        temporalReuseGIDesc.setShaderModel(kShaderModel);
+        temporalReuseGIDesc.addShaderLibrary(kTemporalReuseGIPassFilename).csEntry("main");
+        mpTemporalReuseGIPass = ComputePass::create(mpDevice, temporalReuseGIDesc, mpScene->getSceneDefines());
+
+        Program::Desc spatialReuseGIDesc;
+        spatialReuseGIDesc.addShaderModules(pScene->getShaderModules());
+        spatialReuseGIDesc.addTypeConformances(globalTypeConformances);
+        spatialReuseGIDesc.setShaderModel(kShaderModel);
+        spatialReuseGIDesc.addShaderLibrary(kSpatialReuseGIPassFilename).csEntry("main");
+        mpSpatialReuseGIPass = ComputePass::create(mpDevice, spatialReuseGIDesc, mpScene->getSceneDefines());
+
         Program::Desc finalizePassDesc;
         finalizePassDesc.addShaderModules(pScene->getShaderModules());
         finalizePassDesc.addTypeConformances(globalTypeConformances);
@@ -644,6 +683,7 @@ void PLTPT::createBuffers(RenderContext* pRenderContext, const RenderData& rende
 
     mpBounceBuffer = nullptr;
     mpReservoirBuffers.clear();
+    mpReservoirGIBuffers.clear();
     mpSurfaceData.clear();
     mpFirstBounceBuffer = nullptr;
 
@@ -673,6 +713,12 @@ void PLTPT::createBuffers(RenderContext* pRenderContext, const RenderData& rende
         ));
         mpReservoirBuffers[i]->setName("PLTPT::mpReservoirBuffer_" + std::to_string(i));
 
+        mpReservoirGIBuffers.push_back(Buffer::createStructured(
+            this->mpDevice.get(), kReservoirGIPayloadSizeBytes, pixelCount,
+            Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
+        ));
+        mpReservoirGIBuffers[i]->setName("PLTPT::mpReservoirGIBuffer_" + std::to_string(i));
+
         mpSurfaceData.push_back(Buffer::createStructured(
             this->mpDevice.get(), sizeof(uint4) * 2 /*TODO: variable*/, pixelCount,
             Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
@@ -696,40 +742,15 @@ void PLTPT::temporalReusePass(RenderContext* pRenderContext, const RenderData& r
     var["gMotionVectors"] = renderData.getTexture(kInputMotionVectors);
     var["gReservoirs"] = mpReservoirBuffers[mReservoirBufferIndex];
     var["gSurfaceData"] = mpSurfaceData[mReservoirBufferIndex];
-    var["beamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
 
     var["gPrevSurfaceData"] = mpSurfaceData[(mReservoirBufferIndex + 1) % 2];
     var["gPrevReservoirs"] = mpReservoirBuffers[(mReservoirBufferIndex + 1) % 2];
-    var["prevBeamBuffer"] = mpBeamBuffers[(mReservoirBufferIndex + 1) % 2];
 
     //var["gDebug"] = renderData.getTexture(kDebug);
 
     mpTemporalReusePass["gScene"] = mpScene->getParameterBlock();
 
     mpTemporalReusePass->execute(pRenderContext, { targetDim, 1u });
-}
-
-void PLTPT::finalizePass(RenderContext* pRenderContext, const RenderData& renderData)
-{
-    FALCOR_PROFILE(pRenderContext, "PLTPT::finalizePass");
-
-    const uint2& targetDim = renderData.getDefaultTextureDims();
-
-    // Bind resources.
-    auto var = mpFinalizePass->getRootVar();
-
-    var["CB"]["gFrameCount"] = mFrameCount;
-    var["CB"]["kOutputSize"] = targetDim;
-
-    var["gOutputColor"] = renderData.getTexture("color");
-
-    var["reservoirBuffer"] = mpReservoirBuffers[mReservoirBufferIndex];
-    var["beamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
-    var["firstBounceBuffer"] = mpFirstBounceBuffer;
-
-    mpFinalizePass["gScene"] = mpScene->getParameterBlock();
-
-    mpFinalizePass->execute(pRenderContext, { targetDim, 1u });
 }
 
 void PLTPT::spatialReusePass(RenderContext* pRenderContext, const RenderData& renderData)
@@ -754,4 +775,81 @@ void PLTPT::spatialReusePass(RenderContext* pRenderContext, const RenderData& re
     mpSpatialReusePass["gScene"] = mpScene->getParameterBlock();
 
     mpSpatialReusePass->execute(pRenderContext, { targetDim, 1u });
+}
+
+void PLTPT::temporalReuseGIPass(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    FALCOR_PROFILE(pRenderContext, "PLTPT::temporalReuseGIPass");
+
+    const uint2& targetDim = renderData.getDefaultTextureDims();
+
+    // Bind resources.
+    auto var = mpTemporalReuseGIPass->getRootVar()["CB"]["gTemporalReuseGIPass"];
+
+    var["gFrameDim"] = targetDim;
+    var["gFrameCount"] = mFrameCount;
+
+    var["gMotionVectors"] = renderData.getTexture(kInputMotionVectors);
+    var["gGIReservoirs"] = mpReservoirGIBuffers[mReservoirBufferIndex];
+    var["gSurfaceData"] = mpSurfaceData[mReservoirBufferIndex];
+    var["beamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
+
+    var["gPrevSurfaceData"] = mpSurfaceData[(mReservoirBufferIndex + 1) % 2];
+    var["gPrevGIReservoirs"] = mpReservoirGIBuffers[(mReservoirBufferIndex + 1) % 2];
+    var["prevBeamBuffer"] = mpBeamBuffers[(mReservoirBufferIndex + 1) % 2];
+
+    //var["gDebug"] = renderData.getTexture(kDebug);
+
+    mpTemporalReuseGIPass["gScene"] = mpScene->getParameterBlock();
+
+    mpTemporalReuseGIPass->execute(pRenderContext, { targetDim, 1u });
+}
+
+void PLTPT::spatialReuseGIPass(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    FALCOR_PROFILE(pRenderContext, "PLTPT::spatialReuseGIPass");
+
+    const uint2& targetDim = renderData.getDefaultTextureDims();
+
+    // Bind resources.
+    auto var = mpSpatialReuseGIPass->getRootVar()["CB"]["gSpatialReuseGIPass"];
+
+    var["gFrameDim"] = targetDim;
+    var["gFrameCount"] = mFrameCount;
+
+    var["gGIReservoirs"] = mpReservoirGIBuffers[(mReservoirBufferIndex + 1) % 2];
+    var["gSurfaceData"] = mpSurfaceData[(mReservoirBufferIndex + 1) % 2];
+    var["beamBuffer"] = mpBeamBuffers[(mReservoirBufferIndex + 1) % 2];
+
+    var["gOutGIReservoirs"] = mpReservoirGIBuffers[mReservoirBufferIndex];
+    var["outBeamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
+
+    mpSpatialReuseGIPass["gScene"] = mpScene->getParameterBlock();
+
+    mpSpatialReuseGIPass->execute(pRenderContext, { targetDim, 1u });
+}
+
+
+void PLTPT::finalizePass(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    FALCOR_PROFILE(pRenderContext, "PLTPT::finalizePass");
+
+    const uint2& targetDim = renderData.getDefaultTextureDims();
+
+    // Bind resources.
+    auto var = mpFinalizePass->getRootVar();
+
+    var["CB"]["gFrameCount"] = mFrameCount;
+    var["CB"]["kOutputSize"] = targetDim;
+
+    var["gOutputColor"] = renderData.getTexture("color");
+
+    var["reservoirBuffer"] = mpReservoirBuffers[mReservoirBufferIndex];
+    var["reservoirGIBuffer"] = mpReservoirGIBuffers[mReservoirBufferIndex];
+    var["beamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
+    var["firstBounceBuffer"] = mpFirstBounceBuffer;
+
+    mpFinalizePass["gScene"] = mpScene->getParameterBlock();
+
+    mpFinalizePass->execute(pRenderContext, { targetDim, 1u });
 }

@@ -66,8 +66,9 @@ void forwardUnwindStep(const TriangleHit triangleHit,
     // Spectral MIS
     forwardHWSSMis(bsdf, sd, wo, sampledBsdfLobe, beam);
 }
+
 // Replay path and evaluate contributions
-void forwardUnwind(const int bounceIdx, const uint2 pixel, inout PLTBeam beam, inout Reservoir reservoir) {
+void forwardUnwind(const int bounceIdx, const uint2 pixel, inout PLTBeam beam, inout ReservoirGI reservoir) {
     for (int p=bounceIdx-1; p>=1; --p) { // Everything but the last bounce
         const BounceData bounce = readBounce(p, pixel);
 
@@ -78,7 +79,14 @@ void forwardUnwind(const int bounceIdx, const uint2 pixel, inout PLTBeam beam, i
 
         forwardUnwindStep(triangleHit, v, wo, bounce.sampledBsdfLobe, beam);
     }
-    appendBeam(beam, pixel, reservoir);
+    if (bounceIdx > 0)
+    {
+        appendBeamGI(beam, pixel, reservoir); //global illumination
+    }
+    else
+    {
+        recordBeam(beam, pixel); // direct illumination
+    }
 }
 void manifoldForwardUnwind(const ManifoldSampleData result,
                            const float3 origin,
@@ -161,7 +169,7 @@ void evalEmissive(inout PLTSolve solveData,
                   const ShadingData sd,
                   const TriangleHit triangleHit,
                   bool importanceSampleSpectrum,
-                  inout Reservoir reservoir) {
+                  inout ReservoirGI reservoir) {
     // Emissive geometry
     // Only direct-sample lights if we do not use MIS or no NEE was performed
     const bool didNEE = wasNEEAvailable(bounceIdx, bounce.flags);
@@ -228,7 +236,7 @@ void evalNEE(inout PLTSolve solveData,
              const IMaterialInstance bsdf,
              inout PLTBeam beam,
              const bool NEEEvalCurrentVertex,
-             inout Reservoir reservoir) {
+             inout ReservoirGI reservoir) {
     if (NEEEvalCurrentVertex) {
         let lod = ExplicitLodTextureSampler(0.f);
         const ShadingData forwardSd = gScene.materials.prepareShadingData(V, materialID, -beam.r, lod);
@@ -254,7 +262,7 @@ void NEE(inout PLTSolve solveData,
          const VertexData V,
          const IMaterialInstance bsdf,
          const BSDFProperties bsdfProp,
-         inout Reservoir reservoir) {
+         inout ReservoirGI reservoir) {
     const uint lobes = bsdf.getLobes(sd);
 
     const bool allowMSOnCurrentVertex = kDoMSonNEE && bounceIdx>0 && !bounce.flags.lastBounceWasDelta && bsdfProp.canManifoldWalkReflective;
@@ -376,7 +384,7 @@ void onMiss(inout PLTSolve solveData,
             const int bounceIdx,
             const BounceData bounce,
             const uint2 pixel,
-            inout Reservoir reservoir) {
+            inout ReservoirGI reservoir) {
     const float3 wo = bounce.wi;
     // Only direct-sample lights if we do not use MIS or no NEE was performed
     const bool didNEE = wasNEEAvailable(bounceIdx, bounce.flags);
@@ -417,7 +425,7 @@ void main() {
     // First we do with the SG is draw the sampling wavelength, as we require it to be the same between sample and solve pass.
     const float samplingWavelength = SpectrumSampler.sampleOne(sampleNext1D(sg));
 
-    Reservoir reservoir = {};
+    ReservoirGI reservoir = {};
 
     // Evaluate all bounces
     PLTSolve solveData = PLTSolve(sg, tilesg, samplingWavelength);
@@ -472,7 +480,7 @@ void main() {
     reservoir.M = 1;
 
     const uint reservoirIdx = pixel.x + pixel.y * kOutputSize.x;
-    reservoirBuffer[reservoirIdx] = reservoir.pack();
+    reservoirGIBuffer[reservoirIdx] = reservoir.pack();
 
 
 #if DO_DEBUG_VIEW==1

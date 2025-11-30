@@ -22,8 +22,11 @@ target_sources(PLTPT PRIVATE
     SurfaceData.slang
     ReSTIRHelperFunctions.slang
     Reservoir.slang
+    ReservoirGI.slang
     TemporalReusePass.cs.slang
     SpatialReusePass.cs.slang
+    TemporalReuseGIPass.cs.slang
+    SpatialReuseGIPass.cs.slang
 )
 
 target_copy_shaders(PLTPT RenderPasses/PLTPT)

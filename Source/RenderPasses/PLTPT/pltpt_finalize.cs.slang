@@ -119,15 +119,23 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 
     float3 finalColor = float3(0.f);
 
-    const uint beam0Idx = (pixel.x + (pixel.y * kOutputSize.x)) * kMaxBeamCount;
-
     const uint reservoirIdx = pixel.y * kOutputSize.x + pixel.x;
-    const Reservoir reservoir = Reservoir::unpack(reservoirBuffer[reservoirIdx]);
     const BounceData bounce = firstBounceBuffer[pixel.x + (pixel.y * kOutputSize.x)];
 
-    for (int p = 0; p < reservoir.beamCount; ++p)
+    // DI
     {
-        PLTBeam beam = PLTBeam::unpack(beamBuffer[beam0Idx + p], reservoir.posW, reservoir.r, reservoir.lastHitNormal);
+        const Reservoir reservoir = Reservoir::unpack(reservoirBuffer[reservoirIdx]);
+        PLTBeam beam = reservoir.getBeam();
+        unwindLastStep(bounce, pixel, beam);
+        finalColor += measure(bounce.pathContribution, beam);
+    }
+
+    // GI
+    const uint beam0Idx = (pixel.x + (pixel.y * kOutputSize.x)) * kMaxBeamCount;
+    const ReservoirGI reservoirGI = ReservoirGI::unpack(reservoirGIBuffer[reservoirIdx]);
+    for (int p = 0; p < reservoirGI.beamCount; ++p)
+    {
+        PLTBeam beam = PLTBeam::unpack(beamBuffer[beam0Idx + p], reservoirGI.posW, reservoirGI.r, reservoirGI.lastHitNormal);
         unwindLastStep(bounce, pixel, beam);
         finalColor += measure(bounce.pathContribution, beam);
     }

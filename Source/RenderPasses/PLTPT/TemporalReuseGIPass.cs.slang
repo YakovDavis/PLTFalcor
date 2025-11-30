@@ -6,11 +6,11 @@ import Utils.Sampling.SampleGenerator;
 
 import Utils.Color.ColorHelpers;
 
-import Reservoir;
+import ReservoirGI;
 import SurfaceData;
 import ReSTIRHelperFunctions;
 
-struct TemporalReusePass
+struct TemporalReuseGIPass
 {
     static const uint kMCap = 30;
     static const float kMaxOffset = 5.f;
@@ -23,8 +23,10 @@ struct TemporalReusePass
     Texture2D<float2> gMotionVectors; ///< 2D screen space motion vector.
     StructuredBuffer<PackedSurfaceData> gSurfaceData;   ///< Surface data for the current frame.
     StructuredBuffer<PackedSurfaceData> gPrevSurfaceData;   ///< Surface data for the previous frame.
-    RWStructuredBuffer<PackedReservoir> gPrevReservoirs;  ///< Buffer with reservoirs from the previous frame.
-    StructuredBuffer<PackedReservoir> gReservoirs; ///< Buffer with reservoirs.
+    RWStructuredBuffer<PackedReservoirGI> gPrevGIReservoirs;  ///< Buffer with reservoirs from the previous frame.
+    StructuredBuffer<PackedReservoirGI> gGIReservoirs; ///< Buffer with reservoirs.
+    RWStructuredBuffer<PackedPLTBeam> prevBeamBuffer; ///< Buffer with reservoir beams from the previous frame.
+    StructuredBuffer<PackedPLTBeam> beamBuffer; ///< Buffer with reservoir beams
 
     void execute(const uint2 pixel)
     {
@@ -37,7 +39,7 @@ struct TemporalReusePass
         SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
 
         // Get reservoir with initial candidate samples from the previous pass.
-        Reservoir currentReservoir = Reservoir::unpack(gReservoirs[bufferIndex]);
+        ReservoirGI currentReservoir = ReservoirGI::unpack(gGIReservoirs[bufferIndex]);
 
         // Reproject the pixel position.
         uint2 reprojPos = uint2(float2(pixel) + gMotionVectors[pixel] * gFrameDim + sampleNext2D(sg));
@@ -80,41 +82,60 @@ struct TemporalReusePass
         }
 
         if (!neighborFound) {
-            gPrevReservoirs[bufferIndex] = currentReservoir.pack();
+            gPrevGIReservoirs[bufferIndex] = currentReservoir.pack();
             return;
         }
 
         // Get index for the structured buffer access for the previous pixel.
         uint prevBufferIndex = prevPixel.y * gFrameDim.x + prevPixel.x;
 
-        Reservoir outputReservoir = {};
+        ReservoirGI outputReservoir;
         // Get final reservoir from the previous frame.
-        Reservoir prevReservoir = Reservoir::unpack(gPrevReservoirs[prevBufferIndex]);
+        ReservoirGI prevReservoir = ReservoirGI::unpack(gPrevGIReservoirs[prevBufferIndex]);
 
         // Clamp the previous frame's M.
         prevReservoir.M = min(prevReservoir.M, kMCap);
 
         // Standard combination of multiple reservoirs (Algorithm 4 from the original paper):
-        float prevTargetPdf = prevReservoir.getRestirPdf();
+        float prevTargetPdf = 0.f;
+        const uint prevBeam0Idx = (prevPixel.x + (prevPixel.y * gFrameDim.x)) * 4; // TODO: kMaxBeamCount;
+        for (int p = 0; p < prevReservoir.beamCount; ++p) {
+            PLTBeam b = PLTBeam::unpack(prevBeamBuffer[prevBeam0Idx + p], prevReservoir.posW, prevReservoir.r, prevReservoir.lastHitNormal);
+            prevTargetPdf += b.getRestirPdf();
+        }
         bool prevChosen = outputReservoir.update(prevReservoir, prevTargetPdf, sg);
 
-        float targetPdf = currentReservoir.getRestirPdf();
+        float targetPdf = 0.f;
+        const uint beam0Idx = (pixel.x + (pixel.y * gFrameDim.x)) * 4; // TODO: kMaxBeamCount;
+        for (int p = 0; p < currentReservoir.beamCount; ++p) {
+            PLTBeam b = PLTBeam::unpack(beamBuffer[beam0Idx + p], currentReservoir.posW, currentReservoir.r, currentReservoir.lastHitNormal);
+            targetPdf += b.getRestirPdf();
+        }
         bool currentChosen = outputReservoir.update(currentReservoir, targetPdf, sg);
 
         outputReservoir.W = outputReservoir.W  > 0.f ? outputReservoir.weightSum / (outputReservoir.M * outputReservoir.W) : 0.f;
 
         // Store combined reservoir.
-        gPrevReservoirs[bufferIndex] = outputReservoir.pack();
+        gPrevGIReservoirs[bufferIndex] = outputReservoir.pack();
+
+        // Move beams from prev to current if prev chosen
+        if (currentChosen)
+        {
+            for (int p = 0; p < 4; ++p) // TODO: un-hardcode max beam count
+            {
+                prevBeamBuffer[beam0Idx + p] = beamBuffer[beam0Idx + p];
+            }
+        }
     }
 }
 
 cbuffer CB
 {
-    TemporalReusePass gTemporalReusePass;
+    TemporalReuseGIPass gTemporalReuseGIPass;
 }
 
 [numthreads(16, 16, 1)]
 void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
-    gTemporalReusePass.execute(dispatchThreadId.xy);
+    gTemporalReuseGIPass.execute(dispatchThreadId.xy);
 }

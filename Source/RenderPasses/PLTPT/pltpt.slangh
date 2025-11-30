@@ -55,6 +55,7 @@ import Utils.Color.SpectrumUtils;
 import Path;
 import Rendering.PLT;
 import Reservoir;
+import ReservoirGI;
 
 import Rendering.Lights.LightHelpers;
 import Rendering.Lights.EmissiveLightSampler;
@@ -134,8 +135,9 @@ RWStructuredBuffer<BounceData> bounceBuffer;
 
 /** Reservoir storage */
 
-RWStructuredBuffer<PackedPLTBeam> beamBuffer;
 RWStructuredBuffer<PackedReservoir> reservoirBuffer;
+RWStructuredBuffer<PackedPLTBeam> beamBuffer;
+RWStructuredBuffer<PackedReservoirGI> reservoirGIBuffer;
 
 // Read a bounce
 BounceData readBounce(int p, const uint2 pixel) {
@@ -173,20 +175,51 @@ void appendBounce(inout Path path, const float3 wi) {
     appendBounce(path, info, wi, 0);
 }
 
-bool appendBeam(const PLTBeam beam, const uint2 pixel, inout Reservoir reservoir)
+/*PLTBeam readBeam(const int p, const uint2 pixel)
 {
-    const uint beamCount = reservoir.beamCount;
+    const uint idx = (pixel.x + pixel.y * kOutputSize.x) * kMaxBeamCount + p;
+    return PLTBeam::unpack(beamBuffer[idx]);
+}*/
+
+bool appendBeamGI(const PLTBeam beam, const uint2 pixel, inout ReservoirGI reservoirGI)
+{
+    const uint beamCount = reservoirGI.beamCount;
 
     if (beamCount > kMaxBeamCount)
         return false;
 
     const uint idx = (pixel.x + pixel.y * kOutputSize.x) * kMaxBeamCount + beamCount;
     beamBuffer[idx] = beam.pack();
-    reservoir.beamCount = beamCount + 1;
-    reservoir.W += beam.getRestirPdf();
+    reservoirGI.beamCount = beamCount + 1;
+    reservoirGI.W += beam.getRestirPdf();
+    reservoirGI.posW = beam.posW;
+    reservoirGI.r = beam.r;
+    reservoirGI.lastHitNormal = beam.lastHitNormal;
+    return true;
+}
+
+bool recordBeam(const PLTBeam beam, const uint2 pixel)
+{
+    const uint idx = pixel.x + pixel.y * kOutputSize.x;
+    Reservoir reservoir;
+    reservoir.W = beam.getRestirPdf();
+    reservoir.weightSum = reservoir.W;
+    reservoir.M = 1;
     reservoir.posW = beam.posW;
     reservoir.r = beam.r;
-    reservoir.lastHitNormal = beam.lastHitNormal;
+    reservoir.distant = beam.distant;
+    reservoir.Theta = beam.Theta;
+    reservoir.t = beam.t;
+    reservoir.L = beam.L;
+    reservoir.L1 = beam.L1;
+    reservoir.L2 = beam.L2;
+    reservoir.L3 = beam.L3;
+    reservoir.wavelengths = beam.wavelengths;
+    reservoir.spectralPDFs = beam.spectralPDFs;
+    reservoir.hwss_comps = beam.hwss_comps;
+
+    reservoirBuffer[idx] = reservoir.pack();
+
     return true;
 }
 

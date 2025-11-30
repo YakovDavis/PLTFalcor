@@ -326,7 +326,6 @@ struct PLTBeam {
     float getRestirPdf()
     {
         float Result = 0.f;
-        [unroll]
         for (int p = 0; p < hwss_comps; ++p)
         {
             Result += L[p];

@@ -70,6 +70,9 @@ private:
     void temporalReusePass(RenderContext* pRenderContext, const RenderData& renderData);
     void spatialReusePass(RenderContext* pRenderContext, const RenderData& renderData);
 
+    void temporalReuseGIPass(RenderContext* pRenderContext, const RenderData& renderData);
+    void spatialReuseGIPass(RenderContext* pRenderContext, const RenderData& renderData);
+
     void loadSurfaceDataPass(RenderContext* pRenderContext, const RenderData& renderData);
 
     void finalizePass(RenderContext* pRenderContext, const RenderData& renderData);
@@ -86,6 +89,7 @@ private:
     uint                        mMaxBeams = 4;                 ///< Max beams to be saved for the final pass and reuse
     uint                        mReservoirBufferIndex = 0;
     std::vector<Buffer::SharedPtr>           mpReservoirBuffers;                 ///< Per-frame reservoir buffers (vector for swap).
+    std::vector<Buffer::SharedPtr>           mpReservoirGIBuffers;                 ///< Per-frame reservoir gi buffers (vector for swap).
     std::vector<Buffer::SharedPtr>           mpBeamBuffers;                 ///< Per-frame plt beam buffers (vector for swap).
 
     std::vector<Buffer::SharedPtr> mpSurfaceData;                    ///< Pointer to the buffer for surface data (current and prev frame).
@@ -111,8 +115,11 @@ private:
 
     bool                        mAlphaMasking = true;
 
-    bool                        mDoTemporalReuse = true;
-    bool                        mDoSpatialReuse = true;
+    bool                        mDoTemporalReuse = false;
+    bool                        mDoSpatialReuse = false;
+
+    bool                        mDoTemporalReuseGI = false;
+    bool                        mDoSpatialReuseGI = false;
 
     bool                        mDoNEE = true;
     bool                        mDoMIS = true;
@@ -141,6 +148,8 @@ private:
 
     ComputePass::SharedPtr          mpTemporalReusePass;              ///< Compute pass for temporal reuse
     ComputePass::SharedPtr          mpSpatialReusePass;              ///< Compute pass for spatial reuse
+    ComputePass::SharedPtr          mpTemporalReuseGIPass;              ///< Compute pass for GI temporal reuse
+    ComputePass::SharedPtr          mpSpatialReuseGIPass;              ///< Compute pass for GI spatial reuse
     ComputePass::SharedPtr          mpFinalizePass;              ///< Compute pass for final shading
 };
 
