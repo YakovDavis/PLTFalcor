@@ -89,7 +89,8 @@ bool generateEnvMapSample<S: ISampleGenerator>(const ShadingData sd, inout S sg,
 
     // Sample environment map.
     EnvMapSample lightSample;
-    if (!envMapSampler.sample(sampleNext2D(sg), wavelength, lightSample)) return false;
+    float2 samplePoint = sampleNext2D(sg);
+    if (!envMapSampler.sample(samplePoint, wavelength, lightSample)) return false;
 
     // Setup returned sample.
     const hwss_t L = lightSample.pdf>0.f ? lightSample.Le/lightSample.pdf : hwss_t(.0f);
@@ -99,6 +100,7 @@ bool generateEnvMapSample<S: ISampleGenerator>(const ShadingData sd, inout S sg,
     ls.origin = computeNewRayOrigin(sd, lightSample.dir);
     ls.distance = kRayTMax;
     ls.dir = lightSample.dir;
+    ls.extraData = samplePoint;
 
     return any(L > 0.f);
 }
@@ -205,3 +207,121 @@ bool generateLightSample<S: ISampleGenerator>(const ShadingData sd,
         !(!sampleReflection && isReflection) && !(!sampleTransmission && !isReflection);
 }
 
+//
+// Below is code for generating a light sample based on existing StoredLightSample (but new wavelengths, etc)
+//
+
+bool generateEnvMapSampleFromStored<S: ISampleGenerator>(const StoredLightSample sls, const ShadingData sd, inout S sg, const float wavelength, out LightSample ls) {
+    ls = {}; // Default initialization to avoid divergence at returns.
+    if (!kUseEnvLight) return false;
+
+    // Sample environment map.
+    EnvMapSample lightSample;
+    if (!envMapSampler.sample(sls.uvOrEnvSample, wavelength, lightSample)) return false;
+
+    // Setup returned sample.
+    const hwss_t L = lightSample.pdf>0.f ? lightSample.Le/lightSample.pdf : hwss_t(.0f);
+    // Env light arrives from +inf
+    ls.beam = pltSourceBeamDistant(-lightSample.dir, kSourcingMaxBeamOmega, L, lightSample.wavelengths, kSourcingMaxBeamOmega, kForceFullyCoherent);
+    ls.pdf = lightSample.pdf;
+    ls.origin = computeNewRayOrigin(sd, lightSample.dir);
+    ls.distance = kRayTMax;
+    ls.dir = lightSample.dir;
+
+    return any(L > 0.f);
+}
+
+bool generateEmissiveSampleFromStored<S : ISampleGenerator>(const StoredLightSample sls, const ShadingData sd, inout S sg, const float wavelength, bool importanceSampleSpectrum, out LightSample ls) {
+    ls = {}; // Default initialization to avoid divergence at returns.
+    if (!kUseEmissiveLights) return false;
+
+    TriangleLightSample tls;
+    if (!emissiveSampler.sampleLightFromStored(sls, sd.posW, sd.N, false, sg, wavelength, importanceSampleSpectrum, tls))
+        return false;
+
+    // Setup returned sample.
+    const hwss_t L = tls.pdf>0.f ? tls.Le/tls.pdf : hwss_t(.0f);
+    ls.pdf = tls.pdf;
+    // Offset shading and light position to avoid self-intersection.
+    const float3 lightPos = computeRayOrigin(tls.posW, tls.normalW);
+    ls.origin = computeNewRayOrigin(sd, lightPos - sd.posW);
+    const float3 toLight = lightPos - ls.origin;
+    ls.distance = length(toLight);
+    ls.dir = normalize(toLight);
+    ls.beam = pltSourceBeamArea(tls.posW, -ls.dir, kSourcingAreaFromEmissiveGeometry, ls.distance, L, tls.wavelengths, kSourcingMaxBeamOmega, kForceFullyCoherent);
+
+    return any(L > 0.f);
+}
+
+bool generateAnalyticLightSampleFromStored<S: ISampleGenerator>(const StoredLightSample sls, const ShadingData sd, inout S sg, const float wavelength, bool importanceSampleSpectrum, out LightSample ls) {
+    ls = {};
+    if (sls.lightType != (uint)SampledLightType::Analytic)
+    {
+        return false;
+    }
+
+    uint lightCount = gScene.getLightCount();
+    if (!kUseAnalyticLights || lightCount == 0) return false;
+    uint lightIndex = min(sls.triangleOrLightIndex, lightCount - 1);
+    let light = gScene.getLight(lightIndex);
+
+    // Sample local light source.
+    AnalyticLightSample lightSample;
+    if (!sampleLight(sd.posW, light, sg, wavelength, importanceSampleSpectrum, lightSample))
+        return false;
+
+    const bool isDistantEmitter = light.type==(uint)LightType::Directional || light.type==(uint)LightType::Distant;
+    const float A = light.surfaceArea; // mm^2
+    const float Omega = 4.f*M_PI*(1.f - sqr(light.cosSubtendedAngle));
+
+    const hwss_t L = lightSample.Li * lightCount;
+
+    // Setup returned sample.
+    ls.pdf = lightSample.pdf / lightCount;
+    // Offset shading position to avoid self-intersection.
+    ls.origin = computeNewRayOrigin(sd, lightSample.dir);
+    // No need to adjust the ray length to avoid self-intersections at the light.
+    ls.distance = lightSample.distance;
+    ls.dir = lightSample.dir;
+
+    const hwss_t wavelengths = lightSample.wavelengths;
+    if (isDistantEmitter)
+        ls.beam = pltSourceBeamDistant(-ls.dir, Omega, L, wavelengths, kSourcingMaxBeamOmega, kForceFullyCoherent);
+    else
+        ls.beam = pltSourceBeamArea(light.posW, -ls.dir, A, ls.distance, L, wavelengths, kSourcingMaxBeamOmega, kForceFullyCoherent);
+
+    return any(L > 0.f);
+}
+
+bool generateLightSampleFromStored<S: ISampleGenerator>(const StoredLightSample sls,
+                                                        const ShadingData sd,
+                                                        const bool sampleReflection,
+                                                        const bool sampleTransmission,
+                                                        inout S sg,
+                                                        inout S tilesg,
+                                                        const float wavelength,
+                                                        bool importanceSampleSpectrum,
+                                                        out LightSample ls) {
+    ls = {};
+    uint lightType = sls.lightType;
+    float p[3];
+    getLightTypeSelectionProbabilities(p);
+    float selectionPdf = p[lightType];
+
+    bool valid = false;
+    if (lightType == (uint)SampledLightType::EnvMap)
+        valid = generateEnvMapSampleFromStored(sls, sd, sg, wavelength, ls);
+    if (lightType == (uint)SampledLightType::Emissive)
+        valid = generateEmissiveSampleFromStored(sls, sd, sg, wavelength, importanceSampleSpectrum, ls);
+    if (lightType == (uint)SampledLightType::Analytic)
+        valid = generateAnalyticLightSampleFromStored(sls, sd, sg, wavelength, importanceSampleSpectrum, ls);
+
+    ls.lightType = lightType;
+    ls.pdf *= selectionPdf;
+    ls.beam.scale(1.f/selectionPdf);
+
+    // Reject samples in non-requested hemispheres.
+    const bool isReflection = dot(sd.faceN, ls.dir)*dot(sd.faceN, sd.V) > .0f;
+    return valid && ls.pdf>1e-6f &&
+        !(!sampleReflection && isReflection) && !(!sampleTransmission && !isReflection);
+}

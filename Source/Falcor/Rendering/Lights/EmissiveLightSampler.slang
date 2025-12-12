@@ -70,6 +70,11 @@ import Utils.Color.SpectrumUtils;
             return false;
         }
 
+        bool sampleLightFromStored<S : ISampleGenerator>(const StoredLightSample sls, const float3 posW, const float3 normalW, const bool upperHemisphere, inout S sg, const float wavelength, bool importanceSampleSpectrum, out TriangleLightSample ls)
+        {
+            return false;
+        }
+
         float evalTriangleSelectionPdf(const float3 posW, const float3 normalW, const bool upperHemisphere, const uint triangleIndex)
         {
             return 0.f;

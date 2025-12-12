@@ -125,6 +125,56 @@ bool sampleTriangle<S: ISampleGenerator>(const float3 posW, const uint triangleI
     return true;
 }
 
+/** Samples an emissive triangle at a specific point.
+    Note that the triangle is only emitting on the front-facing side.
+    \param[in] u Sample barycentrics
+    \param[in] posW Shading point in world space.
+    \param[in] triangleIndex Triangle index of sampled triangle.
+    \param[in] u Uniform random number (2D).
+    \param[out] ls Light sample. Only valid if true is returned.
+    \return True if a sample was generated, false otherwise.
+*/
+bool sampleTriangleFromUV<S: ISampleGenerator>(const float2 u, const float3 posW, const uint triangleIndex, inout S sg, const float wavelength, bool importanceSampleSpectrum, out TriangleLightSample ls)
+{
+    ls = {};
+    ls.triangleIndex = triangleIndex;
+    const EmissiveTriangle tri = gScene.lightCollection.getTriangle(triangleIndex);
+
+    const float3 barycentrics = sample_triangle(u);
+    ls.posW = tri.getPosition(barycentrics);
+
+    // Compute light vector and squared distance.
+    float3 toLight = ls.posW - posW; // Unnormalized light vector
+    const float distSqr = max(FLT_MIN, dot(toLight, toLight)); // Clamp to avoid NaNs below
+    ls.distance = sqrt(distSqr);
+    ls.dir = toLight / ls.distance; // Note: toLight can be zero.
+
+    // Get triangle normal.
+    ls.normalW = tri.normal;
+
+    // Reject sample if triangle is back-facing.
+    float cosTheta = dot(ls.normalW, -ls.dir);
+    if (cosTheta <= 0.f) return false;
+
+    // Evaluate emitted radiance.
+    float2 uv = tri.getTexCoord(barycentrics);
+    ls.Le = .0f;
+    materialEvalEmissive(tri.materialID, uv, wavelength, importanceSampleSpectrum, sg, ls.Le, ls.wavelengths);
+
+    // Compute probability density with respect to solid angle from the shading point.
+    // The farther away the light is and the larger the angle it is at, the larger the pdf becomes. The probability goes to infinity in the limit.
+    // Note: Guard against div-by-zero here by clamping.
+    float denom = max(FLT_MIN, cosTheta * tri.area);
+    ls.pdf = distSqr / denom;
+
+    // Save light sample triangle barycentric coordinates
+    ls.uv = u;
+
+    // TODO: We can simplify the expressions by using the unnormalized quantities for computing the pdf.
+    //ls.pdf = -2.f * distSqr * ls.distance / (dot(N, L);    // Optimized (except N would have to be properly flipped above, before normalW is computed).
+    return true;
+}
+
 /** Evaluates the PDF for a light sample given a hit point on an emissive triangle.
     \param[in] posW Shading point in world space.
     \param[in] hit Triangle hit data.

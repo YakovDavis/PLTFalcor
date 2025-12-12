@@ -71,6 +71,32 @@ struct EmissiveUniformSampler : IEmissiveLightSampler
         return true;
     }
 
+    /** Generate a light sample frome reservoir stored one.
+        \param[in] sls Stored light sample
+        \param[in] posW Shading point in world space.
+        \param[in] normalW Normal at the shading point in world space.
+        \param[in] upperHemisphere True if only upper hemisphere should be considered.
+        \param[in,out] sg Sample generator.
+        \param[out] ls Light sample. Only valid if true is returned.
+        \return True if a sample was generated, false otherwise.
+    */
+    bool sampleLightFromStored<S : ISampleGenerator>(const StoredLightSample sls, const float3 posW, const float3 normalW, const bool upperHemisphere, inout S sg, const float wavelength, bool importanceSampleSpectrum, out TriangleLightSample ls)
+    {
+        if (gScene.lightCollection.isEmpty()) return false;
+
+        uint triangleCount = gScene.lightCollection.triangleCount;
+        uint triangleIndex = min(sls.triangleOrLightIndex, triangleCount - 1);
+
+        float triangleSelectionPdf = gScene.lightCollection.fluxData[triangleIndex].flux * _emissivePower.invWeightsSum;
+
+        // Sample the triangle uniformly.
+        if (!sampleTriangleFromUV(sls.uvOrEnvSample, posW, triangleIndex, sg, wavelength, importanceSampleSpectrum, ls)) return false;
+
+        // The final probability density is the product of the sampling probabilities.
+        ls.pdf *= triangleSelectionPdf;
+        return true;
+    }
+
     /** Evaluate the PDF associated with selecting an emissive triangle.
         \param[in] posW Shading point in world space.
         \param[in] normalW Normal at the shading point in world space.

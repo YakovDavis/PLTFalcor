@@ -20,6 +20,8 @@ struct LightSample {
 
     uint    lightType;  ///< Light type this sample comes from (LightType casted to uint).
 
+    float2 extraData;   ///< Needed for retrieving sample point on env map, maybe smth else in the future
+
     RayDesc getVisibilityRay() {
         RayDesc ray;
         ray.Origin = origin;
