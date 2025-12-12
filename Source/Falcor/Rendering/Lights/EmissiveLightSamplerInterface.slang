@@ -26,7 +26,7 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 
-#include "StoredLightSample.slangh"
+import Rendering.Lights.StoredLightSample;
 import Utils.HWSS;
 __exported import Utils.Sampling.SampleGeneratorInterface;
 

@@ -42,7 +42,7 @@ struct SpatialReusePass
 
     void execute(const uint2 pixel)
     {
-        if (any(pixel >= gFrameDim)) return;
+        /*if (any(pixel >= gFrameDim)) return;
 
 		// Get index for the structured buffer access.
 		uint bufferIndex = pixel.y * gFrameDim.x + pixel.x;
@@ -106,7 +106,7 @@ struct SpatialReusePass
         outputReservoir.W = outputReservoir.W > 0.f ? (outputReservoir.weightSum / outputReservoir.M) / (outputReservoir.W) : 0.f;
 
 	    // Store reservoir
-        gOutReservoirs[bufferIndex] = outputReservoir.pack();
+        gOutReservoirs[bufferIndex] = outputReservoir.pack();*/
     }
 }
 

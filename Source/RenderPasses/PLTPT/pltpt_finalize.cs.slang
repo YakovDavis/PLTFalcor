@@ -47,16 +47,16 @@ void forwardHWSSMis(const IMaterialInstance bsdf,
 }
 
 // Unwind last step before measure
-void unwindLastStep(const BounceData bounce, const uint2 pixel, inout PLTBeam beam) {
+void unwindLastStep(const BounceData bounce, const ShadingData sd, const uint2 pixel, inout PLTBeam beam) {
 
-    const TriangleHit triangleHit = TriangleHit(bounce.hit);
-    const VertexData v = gScene.getVertexData(triangleHit);
+    //const TriangleHit triangleHit = TriangleHit(bounce.hit);
+    //const VertexData v = gScene.getVertexData(triangleHit);
 
     const float3 wo = bounce.wi;
 
     let lod = ExplicitLodTextureSampler(0.f);
-    const uint materialID = gScene.getMaterialID(triangleHit.instanceID);
-    const ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -beam.r, lod);
+    //const uint materialID = gScene.getMaterialID(triangleHit.instanceID);
+    //const ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -beam.r, lod);
 
     // Propagate
     beam.propagate(sd.posW);
@@ -117,17 +117,30 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     const uint2 pixel = dispatchThreadId.xy;
     if (any(pixel >= kOutputSize)) return;
 
+    SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
+
     float3 finalColor = float3(0.f);
 
     const uint reservoirIdx = pixel.y * kOutputSize.x + pixel.x;
     const BounceData bounce = firstBounceBuffer[pixel.x + (pixel.y * kOutputSize.x)];
 
+    const TriangleHit triangleHit = TriangleHit(bounce.hit);
+    const VertexData v = gScene.getVertexData(triangleHit);
+
+    let lod = ExplicitLodTextureSampler(0.f);
+    const uint materialID = gScene.getMaterialID(triangleHit.instanceID);
+    const ShadingData sd = gScene.materials.prepareShadingData(v, materialID, bounce.wi, lod);
+
     // DI
     {
         const Reservoir reservoir = Reservoir::unpack(reservoirBuffer[reservoirIdx]);
-        PLTBeam beam = reservoir.getBeam();
-        unwindLastStep(bounce, pixel, beam);
-        finalColor += measure(bounce.pathContribution, beam);
+        if (reservoir.M > 0) // check valid reservoir
+        {
+            LightSample ls = {};
+            generateLightSampleFromStored(reservoir.sls, sd, sg, reservoir.heroWavelength, true, ls);
+            unwindLastStep(bounce, sd, pixel, ls.beam);
+            finalColor += measure(bounce.pathContribution, ls.beam);
+        }
     }
 
     // GI
@@ -136,8 +149,8 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     for (int p = 0; p < reservoirGI.beamCount; ++p)
     {
         PLTBeam beam = PLTBeam::unpack(beamBuffer[beam0Idx + p], reservoirGI.posW, reservoirGI.r, reservoirGI.lastHitNormal);
-        unwindLastStep(bounce, pixel, beam);
-        finalColor += measure(bounce.pathContribution, beam);
+        unwindLastStep(bounce, sd, pixel, beam);
+        //finalColor += measure(bounce.pathContribution, beam);
     }
     gOutputColor[pixel] = float4(finalColor, 1.f); // TODO: handle emissives
 }

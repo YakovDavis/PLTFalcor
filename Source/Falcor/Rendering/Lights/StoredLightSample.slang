@@ -4,7 +4,6 @@ struct StoredLightSample
 {
     float pdf;
     uint lightType;
-    float distance;
     uint triangleOrLightIndex;
     float2 uvOrEnvSample; // for emissive
 }

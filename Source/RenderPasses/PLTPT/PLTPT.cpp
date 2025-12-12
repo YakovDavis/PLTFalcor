@@ -61,7 +61,7 @@ namespace {
     static constexpr uint32_t kShadowPayloadSizeBytes = 20u;
     static constexpr uint32_t kPerBouncePayloadSizeBytes = 40u;
     static constexpr uint32_t kPerBeamPayloadSizeBytes = 80u;
-    static constexpr uint32_t kReservoirPayloadSizeBytes = 112u;
+    static constexpr uint32_t kReservoirPayloadSizeBytes = 32u;
     static constexpr uint32_t kReservoirGIPayloadSizeBytes = 48u;
     static constexpr uint32_t kMaxRecursionDepth = 1u;
 
@@ -841,6 +841,11 @@ void PLTPT::finalizePass(RenderContext* pRenderContext, const RenderData& render
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["kOutputSize"] = targetDim;
+    var["CB"]["kSourcingAreaFromEmissiveGeometry"] = mSourcingAreaFromEmissiveGeometry;
+    var["CB"]["kSourcingMaxBeamOmega"] = mSourcingMaxBeamOmega;
+
+    if (mpEnvMapSampler)    mpEnvMapSampler->setShaderData(var["CB"]["envMapSampler"]);
+    if (mpEmissiveSampler)  mpEmissiveSampler->setShaderData(var["CB"]["emissiveSampler"]);
 
     var["gOutputColor"] = renderData.getTexture("color");
 

@@ -30,6 +30,7 @@ __exported import Rendering.Lights.EmissiveLightSamplerInterface;
 __exported import Utils.Sampling.SampleGeneratorInterface;
 import Utils.HWSS;
 import Utils.Color.SpectrumUtils;
+import Rendering.Lights.StoredLightSample;
 
 /** The host sets the _EMISSIVE_LIGHT_SAMPLER_TYPE define to select sampler.
 

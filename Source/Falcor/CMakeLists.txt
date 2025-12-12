@@ -205,7 +205,7 @@ target_sources(Falcor PRIVATE
     Rendering/Lights/LightBVHSamplerSharedDefinitions.slang
     Rendering/Lights/LightBVHTypes.slang
     Rendering/Lights/LightHelpers.slang
-    Rendering/Lights/StoredLightSample.slangh
+    Rendering/Lights/StoredLightSample.slang
 
     Rendering/Materials/AnisotropicGGX.slang
     Rendering/Materials/BCSDFConfig.slangh

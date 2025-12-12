@@ -69,6 +69,7 @@ void forwardUnwindStep(const TriangleHit triangleHit,
 
 // Replay path and evaluate contributions
 void forwardUnwind(const int bounceIdx, const uint2 pixel, inout PLTBeam beam, inout ReservoirGI reservoir) {
+
     for (int p=bounceIdx-1; p>=1; --p) { // Everything but the last bounce
         const BounceData bounce = readBounce(p, pixel);
 
@@ -82,10 +83,6 @@ void forwardUnwind(const int bounceIdx, const uint2 pixel, inout PLTBeam beam, i
     if (bounceIdx > 0)
     {
         appendBeamGI(beam, pixel, reservoir); //global illumination
-    }
-    else
-    {
-        recordBeam(beam, pixel); // direct illumination
     }
 }
 void manifoldForwardUnwind(const ManifoldSampleData result,
@@ -375,6 +372,21 @@ void NEE(inout PLTSolve solveData,
 
     // Finally, evaluate NEE contributions
     evalNEE(solveData, bounceIdx, bounce, pixel, V, sd.materialID, bsdf, ls.beam, evalCurrentVertex, reservoir);
+
+    if (bounceIdx == 0) // DI
+    {
+        StoredLightSample sls = {};
+        sls.pdf = ls.pdf;
+        sls.lightType = ls.lightType;
+        sls.uvOrEnvSample = float2(asfloat(ls.extraData.x), asfloat(ls.extraData.y));
+        sls.triangleOrLightIndex = ls.extraData.z;
+        Reservoir outputRes = {};
+        const float geometryFactor = 1; // max(0.f, dot(-ls.beam, sample.normal)) / distSq;  -TODO
+        outputRes.update(sls, ls.beam.getRestirPdf() * geometryFactor, sls.pdf, solveData.sg);
+        outputRes.heroWavelength = ls.beam.wavelengths[0];
+        const uint idx = pixel.x + pixel.y * kOutputSize.x;
+        reservoirBuffer[idx] = outputRes.pack();
+    }
 }
 
 
@@ -424,6 +436,10 @@ void main() {
 
     // First we do with the SG is draw the sampling wavelength, as we require it to be the same between sample and solve pass.
     const float samplingWavelength = SpectrumSampler.sampleOne(sampleNext1D(sg));
+
+    const uint reservoirIdx = pixel.x + pixel.y * kOutputSize.x;
+
+    reservoirBuffer[reservoirIdx].M = 0; // Invalidate anything that may be here
 
     ReservoirGI reservoir = {};
 
@@ -477,9 +493,11 @@ void main() {
 
 
     reservoir.weightSum = reservoir.W;
-    reservoir.M = 1;
+    if (reservoir.W > 0)
+    {
+        reservoir.M = 1;
+    }
 
-    const uint reservoirIdx = pixel.x + pixel.y * kOutputSize.x;
     reservoirGIBuffer[reservoirIdx] = reservoir.pack();
 
 

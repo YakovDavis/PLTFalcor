@@ -31,6 +31,7 @@
 
 #include "pltpt.slangh"
 
+import Rendering.Lights.StoredLightSample;
 
 /** Light sampling */
 
@@ -100,7 +101,7 @@ bool generateEnvMapSample<S: ISampleGenerator>(const ShadingData sd, inout S sg,
     ls.origin = computeNewRayOrigin(sd, lightSample.dir);
     ls.distance = kRayTMax;
     ls.dir = lightSample.dir;
-    ls.extraData = samplePoint;
+    ls.extraData.xy = uint2(asuint(samplePoint.x), asuint(samplePoint.y));
 
     return any(L > 0.f);
 }
@@ -124,6 +125,8 @@ bool generateEmissiveSample<S : ISampleGenerator>(const ShadingData sd, inout S 
     ls.distance = length(toLight);
     ls.dir = normalize(toLight);
     ls.beam = pltSourceBeamArea(tls.posW, -ls.dir, kSourcingAreaFromEmissiveGeometry, ls.distance, L, tls.wavelengths, kSourcingMaxBeamOmega, kForceFullyCoherent);
+    ls.extraData.z = tls.triangleIndex;
+    ls.extraData.xy = uint2(asuint(tls.uv.x), asuint(tls.uv.y));
 
     return any(L > 0.f);
 }
@@ -157,6 +160,7 @@ bool generateAnalyticLightSample<S: ISampleGenerator>(const ShadingData sd, inou
     // No need to adjust the ray length to avoid self-intersections at the light.
     ls.distance = lightSample.distance;
     ls.dir = lightSample.dir;
+    ls.extraData.z = lightIndex;
 
     const hwss_t wavelengths = lightSample.wavelengths;
     if (isDistantEmitter)
@@ -295,10 +299,7 @@ bool generateAnalyticLightSampleFromStored<S: ISampleGenerator>(const StoredLigh
 
 bool generateLightSampleFromStored<S: ISampleGenerator>(const StoredLightSample sls,
                                                         const ShadingData sd,
-                                                        const bool sampleReflection,
-                                                        const bool sampleTransmission,
                                                         inout S sg,
-                                                        inout S tilesg,
                                                         const float wavelength,
                                                         bool importanceSampleSpectrum,
                                                         out LightSample ls) {
@@ -322,6 +323,5 @@ bool generateLightSampleFromStored<S: ISampleGenerator>(const StoredLightSample 
 
     // Reject samples in non-requested hemispheres.
     const bool isReflection = dot(sd.faceN, ls.dir)*dot(sd.faceN, sd.V) > .0f;
-    return valid && ls.pdf>1e-6f &&
-        !(!sampleReflection && isReflection) && !(!sampleTransmission && !isReflection);
+    return valid && ls.pdf>1e-6f;
 }
