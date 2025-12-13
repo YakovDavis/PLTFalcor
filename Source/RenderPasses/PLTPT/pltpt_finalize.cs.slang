@@ -32,6 +32,7 @@
 #include "LightSampling.slangh"
 
 StructuredBuffer<BounceData> firstBounceBuffer;
+StructuredBuffer<hwss_t> gWavelengthsDI;
 
 /** Path measurement */
 
@@ -131,15 +132,22 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     const uint materialID = gScene.getMaterialID(triangleHit.instanceID);
     const ShadingData sd = gScene.materials.prepareShadingData(v, materialID, bounce.wi, lod);
 
+    let bsdf = gScene.materials.getMaterialInstance(sd, lod);
+
     // DI
     {
         const Reservoir reservoir = Reservoir::unpack(reservoirBuffer[reservoirIdx]);
         if (reservoir.M > 0) // check valid reservoir
         {
+            const uint lobes = bsdf.getLobes(sd);
+
+            const bool sampleReflection = (lobes & (uint)LobeType::NonDeltaReflection)!=0;
+            const bool sampleTransmission = (lobes & (uint)LobeType::NonDeltaTransmission)!=0;
+
             LightSample ls = {};
-            generateLightSampleFromStored(reservoir.sls, sd, sg, reservoir.heroWavelength, true, ls);
+            generateLightSampleFromStored(reservoir.sls, sampleReflection, sampleTransmission, sd, sg, reservoir.heroWavelength, true, ls);
             unwindLastStep(bounce, sd, pixel, ls.beam);
-            finalColor += measure(bounce.pathContribution, ls.beam);
+            finalColor += measure(bounce.pathContribution, ls.beam) * reservoir.W;
         }
     }
 

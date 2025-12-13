@@ -17,14 +17,16 @@ struct PackedReservoir
 
     // 6x4B
     StoredLightSample sls;
-    float heroWavelength; // technically shouldn't be in reservoir as we rely on one wl generated this frame
+    half heroWavelength;
+    uint16_t hwss_comps;
 };
 
 struct Reservoir {
     float weightSum; ///< The sum of weights.
     float W; ///< The weight of the reservoir.
     uint M; ///< The number of samples seen so far.
-    float heroWavelength;
+    half heroWavelength;
+    uint16_t hwss_comps;
 
     StoredLightSample sls;
 
@@ -34,11 +36,12 @@ struct Reservoir {
         this.W = 0;
         this.M = 0;
         this.heroWavelength = 0;
+        this.hwss_comps = 0;
 
         this.sls = {};
     }
 
-    [mutating]
+    /*[mutating]
     bool update<S : ISampleGenerator>(const StoredLightSample newStoredLightSample, const float targetPDF, const float sourcePDF, inout S sg)
     {
         float weight = targetPDF / sourcePDF;
@@ -52,7 +55,7 @@ struct Reservoir {
         }
 
         return isSelected;
-    }
+    }*/
 
     [mutating]
     bool update<S : ISampleGenerator>(inout Reservoir reservoir, const float targetPDF, inout S sg)
@@ -66,6 +69,7 @@ struct Reservoir {
         if (isSelected) {
             this.W = targetPDF;
             this.sls = reservoir.sls;
+            this.hwss_comps = reservoir.hwss_comps;
         }
 
         return isSelected;
@@ -86,6 +90,7 @@ struct Reservoir {
         }
 
         reservoir.heroWavelength = packedReservoir.heroWavelength;
+        reservoir.hwss_comps = packedReservoir.hwss_comps;
 
         reservoir.sls = packedReservoir.sls;
 
@@ -98,6 +103,7 @@ struct Reservoir {
         packedReservoir.W = asuint(this.W);
         packedReservoir.M = this.M;
         packedReservoir.heroWavelength = this.heroWavelength;
+        packedReservoir.hwss_comps = this.hwss_comps;
 
         packedReservoir.sls = this.sls;
 

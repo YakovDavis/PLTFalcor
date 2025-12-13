@@ -231,3 +231,20 @@ float RR(const float rrVal, const float rrE, const float sample) {
         .0f :
         1.f-p;
 }
+
+float evalTargetPDF(const ShadingData sd, const IMaterialInstance bsdf, const float cachedIntensity, const uint lobe, const uint hwss_comps, hwss_t wavelengths, const float3 wi, const float3 wo)
+{
+    PLTBeam testBeam = {};
+    testBeam.wavelengths = wavelengths;
+    testBeam.r = wo;
+    testBeam.hwss_comps = hwss_comps;
+    testBeam.L = hwss_t(cachedIntensity);
+    bsdf.eval(sd, wi, lobe, testBeam);
+    float intensitySum = 0;
+    for (int i = 0; i < hwss_comps; ++i)
+    {
+        intensitySum += testBeam.L[i];
+    }
+    return intensitySum / hwss_comps;
+}
+

@@ -62,6 +62,7 @@ namespace {
     static constexpr uint32_t kPerBouncePayloadSizeBytes = 40u;
     static constexpr uint32_t kPerBeamPayloadSizeBytes = 80u;
     static constexpr uint32_t kReservoirPayloadSizeBytes = 32u;
+    static constexpr uint32_t kWavelengthsSizeBytes = 16u;
     static constexpr uint32_t kReservoirGIPayloadSizeBytes = 48u;
     static constexpr uint32_t kMaxRecursionDepth = 1u;
 
@@ -510,6 +511,7 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
     mSampleTracer.pVars->getRootVar()["gSurfaceData"] = mpSurfaceData[mReservoirBufferIndex];
     mSampleTracer.pVars->getRootVar()["firstBounceBuffer"] = mpFirstBounceBuffer;
     varSetter(mSolveTracer.pVars->getRootVar());
+    mSolveTracer.pVars->getRootVar()["gWavelengthsDI"] = mpWavelengthsDIBuffer;
 
 
     // Bind I/O buffers. These needs to be done per-frame as the buffers may change anytime.
@@ -686,6 +688,7 @@ void PLTPT::createBuffers(RenderContext* pRenderContext, const RenderData& rende
     mpReservoirGIBuffers.clear();
     mpSurfaceData.clear();
     mpFirstBounceBuffer = nullptr;
+    mpWavelengthsDIBuffer = nullptr;
 
     mpBounceBuffer = Buffer::createStructured(
         this->mpDevice.get(), kPerBouncePayloadSizeBytes, (uint32_t)bounceBufferElements,
@@ -698,6 +701,12 @@ void PLTPT::createBuffers(RenderContext* pRenderContext, const RenderData& rende
         Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
     );
     mpFirstBounceBuffer->setName("PLTPT::mpFirstBounceBuffer");
+
+    mpWavelengthsDIBuffer = Buffer::createStructured(
+        this->mpDevice.get(), kWavelengthsSizeBytes, (uint32_t)pixelCount,
+        Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
+    );
+    mpWavelengthsDIBuffer->setName("PLTPT::mpWavelengthsDIBuffer");
 
     for (uint i = 0; i < 2; ++i)
     {
@@ -853,6 +862,7 @@ void PLTPT::finalizePass(RenderContext* pRenderContext, const RenderData& render
     var["reservoirGIBuffer"] = mpReservoirGIBuffers[mReservoirBufferIndex];
     var["beamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
     var["firstBounceBuffer"] = mpFirstBounceBuffer;
+    var["gWavelengthsDI"] = mpWavelengthsDIBuffer;
 
     mpFinalizePass["gScene"] = mpScene->getParameterBlock();
 

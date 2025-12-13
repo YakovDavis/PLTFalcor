@@ -92,6 +92,8 @@ private:
     std::vector<Buffer::SharedPtr>           mpReservoirGIBuffers;                 ///< Per-frame reservoir gi buffers (vector for swap).
     std::vector<Buffer::SharedPtr>           mpBeamBuffers;                 ///< Per-frame plt beam buffers (vector for swap).
 
+    Buffer::SharedPtr           mpWavelengthsDIBuffer;               ///< Per-frame buffer with current sampled wavelengths in each pixel
+
     std::vector<Buffer::SharedPtr> mpSurfaceData;                    ///< Pointer to the buffer for surface data (current and prev frame).
 
     Buffer::SharedPtr mpFirstBounceBuffer;                       ///< Pointer to the buffer for first bounce data (for entire current frame) for finalize pass
@@ -115,7 +117,7 @@ private:
 
     bool                        mAlphaMasking = true;
 
-    bool                        mDoTemporalReuse = false;
+    bool                        mDoTemporalReuse = true;
     bool                        mDoSpatialReuse = false;
 
     bool                        mDoTemporalReuseGI = false;

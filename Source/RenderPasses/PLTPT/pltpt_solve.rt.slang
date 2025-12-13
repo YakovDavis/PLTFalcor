@@ -31,6 +31,7 @@
 
 #include "LightSampling.slangh"
 
+RWStructuredBuffer<hwss_t> gWavelengthsDI;  ///< Buffer with wavelengths for direct illumination.
 
 /** Path measurement */
 
@@ -375,17 +376,23 @@ void NEE(inout PLTSolve solveData,
 
     if (bounceIdx == 0) // DI
     {
+        const uint idx = pixel.x + pixel.y * kOutputSize.x;
         StoredLightSample sls = {};
         sls.pdf = ls.pdf;
         sls.lightType = ls.lightType;
         sls.uvOrEnvSample = float2(asfloat(ls.extraData.x), asfloat(ls.extraData.y));
         sls.triangleOrLightIndex = ls.extraData.z;
         Reservoir outputRes = {};
-        const float geometryFactor = 1; // max(0.f, dot(-ls.beam, sample.normal)) / distSq;  -TODO
-        outputRes.update(sls, ls.beam.getRestirPdf() * geometryFactor, sls.pdf, solveData.sg);
-        outputRes.heroWavelength = ls.beam.wavelengths[0];
-        const uint idx = pixel.x + pixel.y * kOutputSize.x;
+        const float targetPDF = evalTargetPDF(sd, bsdf, ls.beam.getRestirPdf() / float(ls.beam.hwss_comps), lobes, ls.beam.hwss_comps, ls.beam.wavelengths, bounce.wi, ls.beam.r);
+        //outputRes.update(sls, targetPDF, sls.pdf, solveData.sg);
+        outputRes.weightSum = targetPDF / sls.pdf;
+        outputRes.M = 1;
+        outputRes.W = targetPDF;
+        outputRes.sls = sls;
+        outputRes.heroWavelength = reservoirBuffer[idx].heroWavelength;
+        outputRes.hwss_comps = ls.beam.hwss_comps;
         reservoirBuffer[idx] = outputRes.pack();
+        gWavelengthsDI[idx] = ls.beam.wavelengths;
     }
 }
 
@@ -440,6 +447,7 @@ void main() {
     const uint reservoirIdx = pixel.x + pixel.y * kOutputSize.x;
 
     reservoirBuffer[reservoirIdx].M = 0; // Invalidate anything that may be here
+    reservoirBuffer[reservoirIdx].heroWavelength = samplingWavelength;
 
     ReservoirGI reservoir = {};
 

@@ -28,7 +28,7 @@ struct TemporalReusePass
 
     void execute(const uint2 pixel)
     {
-        /*if (any(pixel >= gFrameDim)) return;
+        if (any(pixel >= gFrameDim)) return;
 
         // Get index for the structured buffer access.
         uint bufferIndex = pixel.y * gFrameDim.x + pixel.x;
@@ -88,6 +88,8 @@ struct TemporalReusePass
         uint prevBufferIndex = prevPixel.y * gFrameDim.x + prevPixel.x;
 
         Reservoir outputReservoir = {};
+        outputReservoir.heroWavelength = currentReservoir.heroWavelength;
+        outputReservoir.hwss_comps = currentReservoir.hwss_comps;
         // Get final reservoir from the previous frame.
         Reservoir prevReservoir = Reservoir::unpack(gPrevReservoirs[prevBufferIndex]);
 
@@ -95,16 +97,14 @@ struct TemporalReusePass
         prevReservoir.M = min(prevReservoir.M, kMCap);
 
         // Standard combination of multiple reservoirs (Algorithm 4 from the original paper):
-        float prevTargetPdf = prevReservoir.getRestirPdf();
-        bool prevChosen = outputReservoir.update(prevReservoir, prevTargetPdf, sg);
+        bool prevChosen = outputReservoir.update(prevReservoir, prevReservoir.W, sg);
 
-        float targetPdf = currentReservoir.getRestirPdf();
-        bool currentChosen = outputReservoir.update(currentReservoir, targetPdf, sg);
+        bool currentChosen = outputReservoir.update(currentReservoir, currentReservoir.W, sg);
 
         outputReservoir.W = outputReservoir.W  > 0.f ? outputReservoir.weightSum / (outputReservoir.M * outputReservoir.W) : 0.f;
 
         // Store combined reservoir.
-        gPrevReservoirs[bufferIndex] = outputReservoir.pack();*/
+        gPrevReservoirs[bufferIndex] = outputReservoir.pack();
     }
 }
 

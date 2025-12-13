@@ -298,6 +298,8 @@ bool generateAnalyticLightSampleFromStored<S: ISampleGenerator>(const StoredLigh
 }
 
 bool generateLightSampleFromStored<S: ISampleGenerator>(const StoredLightSample sls,
+                                                        const bool sampleReflection,
+                                                        const bool sampleTransmission,
                                                         const ShadingData sd,
                                                         inout S sg,
                                                         const float wavelength,
@@ -323,5 +325,6 @@ bool generateLightSampleFromStored<S: ISampleGenerator>(const StoredLightSample 
 
     // Reject samples in non-requested hemispheres.
     const bool isReflection = dot(sd.faceN, ls.dir)*dot(sd.faceN, sd.V) > .0f;
-    return valid && ls.pdf>1e-6f;
+    return valid && ls.pdf>1e-6f &&
+        !(!sampleReflection && isReflection) && !(!sampleTransmission && !isReflection);
 }
