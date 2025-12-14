@@ -71,7 +71,7 @@ struct SpatialReuseGIPass
         const uint currBeam0Idx = (pixel.x + (pixel.y * gFrameDim.x)) * 4; // TODO: kMaxBeamCount;
         for (int p = 0; p < currentReservoir.beamCount; ++p) {
             PLTBeam b = PLTBeam::unpack(beamBuffer[currBeam0Idx + p], currentReservoir.posW, currentReservoir.r, currentReservoir.lastHitNormal);
-            currReservoirTargetPDF += b.getRestirPdf();
+            currReservoirTargetPDF += b.getAverageIntensity();
         }
         bool currChosen = outputReservoir.update(currentReservoir, currReservoirTargetPDF, sg);
         // Move beams from current to output if chosen
@@ -135,7 +135,7 @@ struct SpatialReuseGIPass
                 {
                     continue; // skip delta rays
                 }
-                neighborReservoirTargetPDF += b.getRestirPdf();
+                neighborReservoirTargetPDF += b.getAverageIntensity();
             }
 
             if (any(neighborSampleNormal != 0.f)) // otherwise only direct illumination, jacobian = 1

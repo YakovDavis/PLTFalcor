@@ -1,9 +1,12 @@
 
+
 /** Describes a minimal light sample to store in reservoir and resample */
 struct StoredLightSample
 {
+    // 7x4B
     float pdf;
-    uint lightType;
-    uint triangleOrLightIndex;
+    uint16_t lightType;
+    uint16_t triangleOrLightIndex;
     float2 uvOrEnvSample; // for emissive
+    float3 dir; // for bsdf eval
 }

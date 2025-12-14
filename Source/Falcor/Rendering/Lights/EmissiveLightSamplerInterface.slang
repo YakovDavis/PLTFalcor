@@ -82,7 +82,7 @@ interface IEmissiveLightSampler
         \param[out] ls Light sample. Only valid if true is returned.
         \return True if a sample was generated, false otherwise.
     */
-    bool sampleLightFromStored<S : ISampleGenerator>(const StoredLightSample sls, const float3 posW, const float3 normalW, const bool upperHemisphere, inout S sg, const float wavelength, bool importanceSampleSpectrum, out TriangleLightSample ls);
+    bool sampleLightFromStored<S : ISampleGenerator>(const StoredLightSample sls, const float3 posW, const float3 normalW, const bool upperHemisphere, inout S sg, const hwss_t wavelengths, out TriangleLightSample ls);
 
     /** Evaluate the PDF associated with selecting an emissive triangle.
         \param[in] posW Shading point in world space.

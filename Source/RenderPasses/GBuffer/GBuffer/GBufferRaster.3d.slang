@@ -128,7 +128,7 @@ GBufferPSOut psMain(VSOut vsOut, uint triangleIndex : SV_PrimitiveID, float3 bar
     // This is a feature guide for the SVGF denoiser pass.
     if (is_valid(gPosNormalFwidth))
     {
-        gPosNormalFwidth[ipos] = float2(length(fwidth(sd.posW)), length(fwidth(bsdfProperties.guideNormal)));
+        gPosNormalFwidth[ipos] = float2(length(fwidth(sd.posW)), length(fwidth(float4(0)/*bsdfProperties.guideNormal*/)));
     }
 
     // Linear z and its derivative

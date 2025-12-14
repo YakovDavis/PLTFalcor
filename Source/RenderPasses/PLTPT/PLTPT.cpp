@@ -61,7 +61,7 @@ namespace {
     static constexpr uint32_t kShadowPayloadSizeBytes = 20u;
     static constexpr uint32_t kPerBouncePayloadSizeBytes = 40u;
     static constexpr uint32_t kPerBeamPayloadSizeBytes = 80u;
-    static constexpr uint32_t kReservoirPayloadSizeBytes = 32u;
+    static constexpr uint32_t kReservoirPayloadSizeBytes = 48u;
     static constexpr uint32_t kWavelengthsSizeBytes = 16u;
     static constexpr uint32_t kReservoirGIPayloadSizeBytes = 48u;
     static constexpr uint32_t kMaxRecursionDepth = 1u;
@@ -754,6 +754,9 @@ void PLTPT::temporalReusePass(RenderContext* pRenderContext, const RenderData& r
 
     var["gPrevSurfaceData"] = mpSurfaceData[(mReservoirBufferIndex + 1) % 2];
     var["gPrevReservoirs"] = mpReservoirBuffers[(mReservoirBufferIndex + 1) % 2];
+
+    var["firstBounceBuffer"] = mpFirstBounceBuffer;
+    var["gWavelengthsDI"] = mpWavelengthsDIBuffer;
 
     //var["gDebug"] = renderData.getTexture(kDebug);
 

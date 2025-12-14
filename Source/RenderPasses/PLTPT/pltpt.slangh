@@ -191,7 +191,7 @@ bool appendBeamGI(const PLTBeam beam, const uint2 pixel, inout ReservoirGI reser
     const uint idx = (pixel.x + pixel.y * kOutputSize.x) * kMaxBeamCount + beamCount;
     beamBuffer[idx] = beam.pack();
     reservoirGI.beamCount = beamCount + 1;
-    reservoirGI.W += beam.getRestirPdf();
+    reservoirGI.W += beam.getAverageIntensity();
     reservoirGI.posW = beam.posW;
     reservoirGI.r = beam.r;
     reservoirGI.lastHitNormal = beam.lastHitNormal;
@@ -202,7 +202,7 @@ bool appendBeamGI(const PLTBeam beam, const uint2 pixel, inout ReservoirGI reser
 {
     const uint idx = pixel.x + pixel.y * kOutputSize.x;
     Reservoir reservoir;
-    reservoir.W = beam.getRestirPdf();
+    reservoir.W = beam.getAverageIntensity();
     reservoir.weightSum = reservoir.W;
     reservoir.M = 1;
     reservoir.posW = beam.posW;

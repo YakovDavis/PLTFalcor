@@ -8,25 +8,28 @@ import Path;
 import Utils.Sampling.SampleGenerator;
 import Rendering.PLT;
 
-// 32 bytes
+// 48 bytes
 struct PackedReservoir
 {
     // 2x4B
     uint W;
     uint M;
 
-    // 6x4B
+    // 8x4B
     StoredLightSample sls;
-    half heroWavelength;
-    uint16_t hwss_comps;
+    uint pad_ = 0;
+
+    // 2x4B
+    uint hwss_comps;
+    float cachedIntensity;
 };
 
 struct Reservoir {
     float weightSum; ///< The sum of weights.
     float W; ///< The weight of the reservoir.
     uint M; ///< The number of samples seen so far.
-    half heroWavelength;
-    uint16_t hwss_comps;
+    uint hwss_comps;
+    float cachedIntensity; ///< Average intensity between wavelength of the initial beam
 
     StoredLightSample sls;
 
@@ -35,8 +38,8 @@ struct Reservoir {
         this.weightSum = 0;
         this.W = 0;
         this.M = 0;
-        this.heroWavelength = 0;
         this.hwss_comps = 0;
+        cachedIntensity = 0;
 
         this.sls = {};
     }
@@ -70,6 +73,7 @@ struct Reservoir {
             this.W = targetPDF;
             this.sls = reservoir.sls;
             this.hwss_comps = reservoir.hwss_comps;
+            this.cachedIntensity = reservoir.cachedIntensity;
         }
 
         return isSelected;
@@ -89,8 +93,8 @@ struct Reservoir {
             reservoir.M = 0;
         }
 
-        reservoir.heroWavelength = packedReservoir.heroWavelength;
         reservoir.hwss_comps = packedReservoir.hwss_comps;
+        reservoir.cachedIntensity = packedReservoir.cachedIntensity;
 
         reservoir.sls = packedReservoir.sls;
 
@@ -102,8 +106,8 @@ struct Reservoir {
         PackedReservoir packedReservoir = {};
         packedReservoir.W = asuint(this.W);
         packedReservoir.M = this.M;
-        packedReservoir.heroWavelength = this.heroWavelength;
         packedReservoir.hwss_comps = this.hwss_comps;
+        packedReservoir.cachedIntensity = this.cachedIntensity;
 
         packedReservoir.sls = this.sls;
 

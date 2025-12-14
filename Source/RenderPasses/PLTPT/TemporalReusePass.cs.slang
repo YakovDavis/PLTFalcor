@@ -2,6 +2,7 @@
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
+import Path;
 import Utils.Sampling.SampleGenerator;
 
 import Utils.Color.ColorHelpers;
@@ -10,9 +11,30 @@ import Reservoir;
 import SurfaceData;
 import ReSTIRHelperFunctions;
 
+import Scene.Raytracing;
+import Scene.Intersection;
+import Scene.ShadingData;
+import Scene.Scene;
+
+float evalTargetPDF(const ShadingData sd, const IMaterialInstance bsdf, const float cachedIntensity, const uint lobe, const uint hwss_comps, hwss_t wavelengths, const float3 wi, const float3 wo)
+{
+    PLTBeam testBeam = {};
+    testBeam.wavelengths = wavelengths;
+    testBeam.r = wo;
+    testBeam.hwss_comps = hwss_comps;
+    testBeam.L = hwss_t(cachedIntensity);
+    bsdf.eval(sd, wi, lobe, testBeam);
+    float intensitySum = 0;
+    for (int i = 0; i < hwss_comps; ++i)
+    {
+        intensitySum += testBeam.L[i];
+    }
+    return intensitySum / hwss_comps;
+}
+
 struct TemporalReusePass
 {
-    static const uint kMCap = 30;
+    static const uint kMCap = 5;
     static const float kMaxOffset = 5.f;
     static const uint kAttemptCount = 1;
 
@@ -25,6 +47,8 @@ struct TemporalReusePass
     StructuredBuffer<PackedSurfaceData> gPrevSurfaceData;   ///< Surface data for the previous frame.
     RWStructuredBuffer<PackedReservoir> gPrevReservoirs;  ///< Buffer with reservoirs from the previous frame.
     StructuredBuffer<PackedReservoir> gReservoirs; ///< Buffer with reservoirs.
+    StructuredBuffer<BounceData> firstBounceBuffer;
+    StructuredBuffer<hwss_t> gWavelengthsDI;
 
     void execute(const uint2 pixel)
     {
@@ -84,11 +108,24 @@ struct TemporalReusePass
             return;
         }
 
+        // Retrieve bounce for bsdf eval
+        const BounceData bounce = firstBounceBuffer[bufferIndex];
+
+        const TriangleHit triangleHit = TriangleHit(bounce.hit);
+        const VertexData v = gScene.getVertexData(triangleHit);
+
+        let lod = ExplicitLodTextureSampler(0.f);
+        const uint materialID = gScene.getMaterialID(triangleHit.instanceID);
+        const ShadingData sd = gScene.materials.prepareShadingData(v, materialID, bounce.wi, lod);
+
+        let bsdf = gScene.materials.getMaterialInstance(sd, lod);
+
+        const uint lobes = bsdf.getLobes(sd);
+
         // Get index for the structured buffer access for the previous pixel.
         uint prevBufferIndex = prevPixel.y * gFrameDim.x + prevPixel.x;
 
         Reservoir outputReservoir = {};
-        outputReservoir.heroWavelength = currentReservoir.heroWavelength;
         outputReservoir.hwss_comps = currentReservoir.hwss_comps;
         // Get final reservoir from the previous frame.
         Reservoir prevReservoir = Reservoir::unpack(gPrevReservoirs[prevBufferIndex]);
@@ -97,11 +134,19 @@ struct TemporalReusePass
         prevReservoir.M = min(prevReservoir.M, kMCap);
 
         // Standard combination of multiple reservoirs (Algorithm 4 from the original paper):
-        bool prevChosen = outputReservoir.update(prevReservoir, prevReservoir.W, sg);
+        if (prevReservoir.M > 0)
+        {
+            float prevPdf = evalTargetPDF(sd, bsdf, prevReservoir.cachedIntensity, lobes, prevReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, prevReservoir.sls.dir);
+            outputReservoir.update(prevReservoir, prevPdf, sg);
+        }
 
-        bool currentChosen = outputReservoir.update(currentReservoir, currentReservoir.W, sg);
+        if (currentReservoir.M > 0)
+        {
+            float currPdf = evalTargetPDF(sd, bsdf, currentReservoir.cachedIntensity, lobes, currentReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, currentReservoir.sls.dir);
+            outputReservoir.update(currentReservoir, currPdf, sg);
+        }
 
-        outputReservoir.W = outputReservoir.W  > 0.f ? outputReservoir.weightSum / (outputReservoir.M * outputReservoir.W) : 0.f;
+        outputReservoir.W = outputReservoir.W  > 0.f ? (outputReservoir.weightSum / outputReservoir.M) / outputReservoir.W : 0.f;
 
         // Store combined reservoir.
         gPrevReservoirs[bufferIndex] = outputReservoir.pack();

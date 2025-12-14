@@ -145,7 +145,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
             const bool sampleTransmission = (lobes & (uint)LobeType::NonDeltaTransmission)!=0;
 
             LightSample ls = {};
-            generateLightSampleFromStored(reservoir.sls, sampleReflection, sampleTransmission, sd, sg, reservoir.heroWavelength, true, ls);
+            generateLightSampleFromStored(reservoir.sls, sampleReflection, sampleTransmission, sd, sg, gWavelengthsDI[reservoirIdx], true, ls);
             unwindLastStep(bounce, sd, pixel, ls.beam);
             finalColor += measure(bounce.pathContribution, ls.beam) * reservoir.W;
         }

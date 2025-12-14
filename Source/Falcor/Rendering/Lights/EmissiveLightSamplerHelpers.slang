@@ -73,6 +73,26 @@ bool materialEvalEmissive<S: ISampleGenerator>(const uint materialID, const floa
     return false;
 }
 
+bool materialEvalEmissiveFromWavelengths<S: ISampleGenerator>(const uint materialID, const float2 uv, const hwss_t wavelengths, inout S sg, out hwss_t Le)
+{
+    // This function only handle basic materials for now. Other material types return zero.
+    // TODO: Generalize to support arbitrary materials (#1314).
+    if (gScene.materials.isBasicMaterial(materialID))
+    {
+        BasicMaterialData md = gScene.materials.getBasicMaterialData(materialID);
+        if (md.isEmissive())
+        {
+            SamplerState s = gScene.materials.getDefaultTextureSampler(materialID);
+            ExplicitLodTextureSampler lod = { 0.f };
+
+            const float3 emissionRGB = gScene.materials.sampleTexture(md.texEmissive, s, uv, float4(1.f), lod).rgb;
+            Le = gScene.evalSpectrum(md.emissionSpectralId, wavelengths);
+            Le *= SpectrumUtils.rgbToSpectrum(emissionRGB, wavelengths);
+        }
+    }
+    return false;
+}
+
 /** Samples an emissive triangle uniformly by area and evaluates the probability density function.
     Note that the triangle is only emitting on the front-facing side.
     \param[in] lights The light collection.
@@ -134,7 +154,7 @@ bool sampleTriangle<S: ISampleGenerator>(const float3 posW, const uint triangleI
     \param[out] ls Light sample. Only valid if true is returned.
     \return True if a sample was generated, false otherwise.
 */
-bool sampleTriangleFromUV<S: ISampleGenerator>(const float2 u, const float3 posW, const uint triangleIndex, inout S sg, const float wavelength, bool importanceSampleSpectrum, out TriangleLightSample ls)
+bool sampleTriangleFromUV<S: ISampleGenerator>(const float2 u, const float3 posW, const uint triangleIndex, inout S sg, const hwss_t wavelengths, out TriangleLightSample ls)
 {
     ls = {};
     ls.triangleIndex = triangleIndex;
@@ -159,7 +179,7 @@ bool sampleTriangleFromUV<S: ISampleGenerator>(const float2 u, const float3 posW
     // Evaluate emitted radiance.
     float2 uv = tri.getTexCoord(barycentrics);
     ls.Le = .0f;
-    materialEvalEmissive(tri.materialID, uv, wavelength, importanceSampleSpectrum, sg, ls.Le, ls.wavelengths);
+    materialEvalEmissiveFromWavelengths(tri.materialID, uv, wavelengths, sg, ls.Le);
 
     // Compute probability density with respect to solid angle from the shading point.
     // The farther away the light is and the larger the angle it is at, the larger the pdf becomes. The probability goes to infinity in the limit.

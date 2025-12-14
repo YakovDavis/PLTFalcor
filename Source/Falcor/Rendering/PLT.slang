@@ -323,30 +323,14 @@ struct PLTBeam {
         hwss_comps = 1;
     }
 
-    float getRestirPdf()
+    float getAverageIntensity()
     {
         float Result = 0.f;
         for (int p = 0; p < hwss_comps; ++p)
         {
             Result += L[p];
         }
-        return Result;
-    }
-
-    float wavelengthWeight(float wavelength)
-    {
-        const float maxIntensityWavelength = 500.0f;
-        return 1.0f - exp(-(wavelength - maxIntensityWavelength) * (wavelength - maxIntensityWavelength) * 0.0001f);
-    }
-
-    float getRestirPdfWeighted()
-    {
-        float Result = 0.f;
-        for (int p = 0; p < hwss_comps; ++p)
-        {
-            Result += L[p] * wavelengthWeight(wavelengths[p]);
-        }
-        return Result;
+        return Result / float(hwss_comps);
     }
 };
 

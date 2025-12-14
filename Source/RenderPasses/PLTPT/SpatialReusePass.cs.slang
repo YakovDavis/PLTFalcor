@@ -65,7 +65,7 @@ struct SpatialReusePass
         if (!surfaceData.isValid())
             return;
 
-        float currReservoirTargetPDF = currentReservoir.getRestirPdf();
+        float currReservoirTargetPDF = currentReservoir.getAverageIntensity();
         bool currChosen = outputReservoir.update(currentReservoir, currReservoirTargetPDF, sg);
 
         float3 rayOrigin = computeRayOrigin(surfaceData.position, surfaceData.normal);
@@ -100,7 +100,7 @@ struct SpatialReusePass
                 continue;
             }
 
-            float neighborReservoirTargetPDF = neighborReservoir.getRestirPdf();
+            float neighborReservoirTargetPDF = neighborReservoir.getAverageIntensity();
             bool neighborChosen = outputReservoir.update(neighborReservoir, neighborReservoirTargetPDF, sg);
         }
         outputReservoir.W = outputReservoir.W > 0.f ? (outputReservoir.weightSum / outputReservoir.M) / (outputReservoir.W) : 0.f;

@@ -71,7 +71,7 @@ import Rendering.Lights.StoredLightSample;
             return false;
         }
 
-        bool sampleLightFromStored<S : ISampleGenerator>(const StoredLightSample sls, const float3 posW, const float3 normalW, const bool upperHemisphere, inout S sg, const float wavelength, bool importanceSampleSpectrum, out TriangleLightSample ls)
+        bool sampleLightFromStored<S : ISampleGenerator>(const StoredLightSample sls, const float3 posW, const float3 normalW, const bool upperHemisphere, inout S sg, const hwss_t wavelengths, out TriangleLightSample ls)
         {
             return false;
         }

@@ -101,7 +101,7 @@ struct TemporalReuseGIPass
         const uint prevBeam0Idx = (prevPixel.x + (prevPixel.y * gFrameDim.x)) * 4; // TODO: kMaxBeamCount;
         for (int p = 0; p < prevReservoir.beamCount; ++p) {
             PLTBeam b = PLTBeam::unpack(prevBeamBuffer[prevBeam0Idx + p], prevReservoir.posW, prevReservoir.r, prevReservoir.lastHitNormal);
-            prevTargetPdf += b.getRestirPdf();
+            prevTargetPdf += b.getAverageIntensity();
         }
         bool prevChosen = outputReservoir.update(prevReservoir, prevTargetPdf, sg);
 
@@ -109,11 +109,11 @@ struct TemporalReuseGIPass
         const uint beam0Idx = (pixel.x + (pixel.y * gFrameDim.x)) * 4; // TODO: kMaxBeamCount;
         for (int p = 0; p < currentReservoir.beamCount; ++p) {
             PLTBeam b = PLTBeam::unpack(beamBuffer[beam0Idx + p], currentReservoir.posW, currentReservoir.r, currentReservoir.lastHitNormal);
-            targetPdf += b.getRestirPdf();
+            targetPdf += b.getAverageIntensity();
         }
         bool currentChosen = outputReservoir.update(currentReservoir, targetPdf, sg);
 
-        outputReservoir.W = outputReservoir.W  > 0.f ? outputReservoir.weightSum / (outputReservoir.M * outputReservoir.W) : 0.f;
+        outputReservoir.W = outputReservoir.W  > 0.f ? (outputReservoir.weightSum / outputReservoir.M) / outputReservoir.W : 0.f;
 
         // Store combined reservoir.
         gPrevGIReservoirs[bufferIndex] = outputReservoir.pack();

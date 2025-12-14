@@ -215,13 +215,13 @@ bool generateLightSample<S: ISampleGenerator>(const ShadingData sd,
 // Below is code for generating a light sample based on existing StoredLightSample (but new wavelengths, etc)
 //
 
-bool generateEnvMapSampleFromStored<S: ISampleGenerator>(const StoredLightSample sls, const ShadingData sd, inout S sg, const float wavelength, out LightSample ls) {
+bool generateEnvMapSampleFromStored<S: ISampleGenerator>(const StoredLightSample sls, const ShadingData sd, inout S sg, const hwss_t wavelengths, out LightSample ls) {
     ls = {}; // Default initialization to avoid divergence at returns.
     if (!kUseEnvLight) return false;
 
     // Sample environment map.
     EnvMapSample lightSample;
-    if (!envMapSampler.sample(sls.uvOrEnvSample, wavelength, lightSample)) return false;
+    if (!envMapSampler.sampleFromStored(sls.uvOrEnvSample, wavelengths, lightSample)) return false;
 
     // Setup returned sample.
     const hwss_t L = lightSample.pdf>0.f ? lightSample.Le/lightSample.pdf : hwss_t(.0f);
@@ -235,12 +235,12 @@ bool generateEnvMapSampleFromStored<S: ISampleGenerator>(const StoredLightSample
     return any(L > 0.f);
 }
 
-bool generateEmissiveSampleFromStored<S : ISampleGenerator>(const StoredLightSample sls, const ShadingData sd, inout S sg, const float wavelength, bool importanceSampleSpectrum, out LightSample ls) {
+bool generateEmissiveSampleFromStored<S : ISampleGenerator>(const StoredLightSample sls, const ShadingData sd, inout S sg, const hwss_t wavelengths, bool importanceSampleSpectrum, out LightSample ls) {
     ls = {}; // Default initialization to avoid divergence at returns.
     if (!kUseEmissiveLights) return false;
 
     TriangleLightSample tls;
-    if (!emissiveSampler.sampleLightFromStored(sls, sd.posW, sd.N, false, sg, wavelength, importanceSampleSpectrum, tls))
+    if (!emissiveSampler.sampleLightFromStored(sls, sd.posW, sd.N, false, sg, wavelengths, tls))
         return false;
 
     // Setup returned sample.
@@ -257,7 +257,7 @@ bool generateEmissiveSampleFromStored<S : ISampleGenerator>(const StoredLightSam
     return any(L > 0.f);
 }
 
-bool generateAnalyticLightSampleFromStored<S: ISampleGenerator>(const StoredLightSample sls, const ShadingData sd, inout S sg, const float wavelength, bool importanceSampleSpectrum, out LightSample ls) {
+bool generateAnalyticLightSampleFromStored<S: ISampleGenerator>(const StoredLightSample sls, const ShadingData sd, inout S sg, const hwss_t wavelengths, bool importanceSampleSpectrum, out LightSample ls) {
     ls = {};
     if (sls.lightType != (uint)SampledLightType::Analytic)
     {
@@ -271,7 +271,7 @@ bool generateAnalyticLightSampleFromStored<S: ISampleGenerator>(const StoredLigh
 
     // Sample local light source.
     AnalyticLightSample lightSample;
-    if (!sampleLight(sd.posW, light, sg, wavelength, importanceSampleSpectrum, lightSample))
+    if (!sampleLightFromWavelengths(sd.posW, light, sg, wavelengths, lightSample))
         return false;
 
     const bool isDistantEmitter = light.type==(uint)LightType::Directional || light.type==(uint)LightType::Distant;
@@ -288,7 +288,6 @@ bool generateAnalyticLightSampleFromStored<S: ISampleGenerator>(const StoredLigh
     ls.distance = lightSample.distance;
     ls.dir = lightSample.dir;
 
-    const hwss_t wavelengths = lightSample.wavelengths;
     if (isDistantEmitter)
         ls.beam = pltSourceBeamDistant(-ls.dir, Omega, L, wavelengths, kSourcingMaxBeamOmega, kForceFullyCoherent);
     else
@@ -302,7 +301,7 @@ bool generateLightSampleFromStored<S: ISampleGenerator>(const StoredLightSample 
                                                         const bool sampleTransmission,
                                                         const ShadingData sd,
                                                         inout S sg,
-                                                        const float wavelength,
+                                                        const hwss_t wavelengths,
                                                         bool importanceSampleSpectrum,
                                                         out LightSample ls) {
     ls = {};
@@ -313,11 +312,11 @@ bool generateLightSampleFromStored<S: ISampleGenerator>(const StoredLightSample 
 
     bool valid = false;
     if (lightType == (uint)SampledLightType::EnvMap)
-        valid = generateEnvMapSampleFromStored(sls, sd, sg, wavelength, ls);
+        valid = generateEnvMapSampleFromStored(sls, sd, sg, wavelengths, ls);
     if (lightType == (uint)SampledLightType::Emissive)
-        valid = generateEmissiveSampleFromStored(sls, sd, sg, wavelength, importanceSampleSpectrum, ls);
+        valid = generateEmissiveSampleFromStored(sls, sd, sg, wavelengths, importanceSampleSpectrum, ls);
     if (lightType == (uint)SampledLightType::Analytic)
-        valid = generateAnalyticLightSampleFromStored(sls, sd, sg, wavelength, importanceSampleSpectrum, ls);
+        valid = generateAnalyticLightSampleFromStored(sls, sd, sg, wavelengths, importanceSampleSpectrum, ls);
 
     ls.lightType = lightType;
     ls.pdf *= selectionPdf;
