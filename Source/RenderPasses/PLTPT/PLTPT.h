@@ -118,7 +118,7 @@ private:
     bool                        mAlphaMasking = true;
 
     bool                        mDoTemporalReuse = true;
-    bool                        mDoSpatialReuse = false;
+    bool                        mDoSpatialReuse = true;
 
     bool                        mDoTemporalReuseGI = false;
     bool                        mDoSpatialReuseGI = false;

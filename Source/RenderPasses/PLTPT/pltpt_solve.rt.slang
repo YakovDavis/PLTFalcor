@@ -382,7 +382,7 @@ void NEE(inout PLTSolve solveData,
         sls.lightType = ls.lightType;
         sls.uvOrEnvSample = float2(asfloat(ls.extraData.x), asfloat(ls.extraData.y));
         sls.triangleOrLightIndex = ls.extraData.z;
-        sls.dir = ls.beam.r;
+        sls.posW = ls.origin + ls.dir * ls.distance;
         Reservoir outputRes = {};
         const float targetPDF = evalTargetPDF(sd, bsdf, ls.beam.getAverageIntensity(), lobes, ls.beam.hwss_comps, ls.beam.wavelengths, bounce.wi, ls.beam.r);
         //outputRes.update(sls, targetPDF, sls.pdf, solveData.sg);

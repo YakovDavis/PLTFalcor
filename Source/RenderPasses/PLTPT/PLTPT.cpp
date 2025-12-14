@@ -784,6 +784,9 @@ void PLTPT::spatialReusePass(RenderContext* pRenderContext, const RenderData& re
     var["gOutReservoirs"] = mpReservoirBuffers[mReservoirBufferIndex];
     var["outBeamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
 
+    var["firstBounceBuffer"] = mpFirstBounceBuffer;
+    var["gWavelengthsDI"] = mpWavelengthsDIBuffer;
+
     mpSpatialReusePass["gScene"] = mpScene->getParameterBlock();
 
     mpSpatialReusePass->execute(pRenderContext, { targetDim, 1u });

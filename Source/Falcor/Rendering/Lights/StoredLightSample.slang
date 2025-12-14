@@ -8,5 +8,5 @@ struct StoredLightSample
     uint16_t lightType;
     uint16_t triangleOrLightIndex;
     float2 uvOrEnvSample; // for emissive
-    float3 dir; // for bsdf eval
+    float3 posW; // for bsdf eval and visibility
 }

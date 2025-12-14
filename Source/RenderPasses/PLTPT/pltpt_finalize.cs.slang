@@ -158,7 +158,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     {
         PLTBeam beam = PLTBeam::unpack(beamBuffer[beam0Idx + p], reservoirGI.posW, reservoirGI.r, reservoirGI.lastHitNormal);
         unwindLastStep(bounce, sd, pixel, beam);
-        //finalColor += measure(bounce.pathContribution, beam);
+        finalColor += measure(bounce.pathContribution, beam);
     }
-    gOutputColor[pixel] = float4(finalColor, 1.f); // TODO: handle emissives
+    gOutputColor[pixel] = float4(finalColor, 1.f);
 }

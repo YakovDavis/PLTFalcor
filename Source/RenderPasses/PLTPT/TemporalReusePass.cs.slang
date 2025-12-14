@@ -136,13 +136,15 @@ struct TemporalReusePass
         // Standard combination of multiple reservoirs (Algorithm 4 from the original paper):
         if (prevReservoir.M > 0)
         {
-            float prevPdf = evalTargetPDF(sd, bsdf, prevReservoir.cachedIntensity, lobes, prevReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, prevReservoir.sls.dir);
+            float3 dir = normalize(prevReservoir.sls.posW - v.posW);
+            float prevPdf = evalTargetPDF(sd, bsdf, prevReservoir.cachedIntensity, lobes, prevReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, dir);
             outputReservoir.update(prevReservoir, prevPdf, sg);
         }
 
         if (currentReservoir.M > 0)
         {
-            float currPdf = evalTargetPDF(sd, bsdf, currentReservoir.cachedIntensity, lobes, currentReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, currentReservoir.sls.dir);
+            float3 dir = normalize(currentReservoir.sls.posW - v.posW);
+            float currPdf = evalTargetPDF(sd, bsdf, currentReservoir.cachedIntensity, lobes, currentReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, dir);
             outputReservoir.update(currentReservoir, currPdf, sg);
         }
 
