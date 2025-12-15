@@ -6,6 +6,7 @@ def render_graph_PLTPT():
     loadRenderPassLibrary("GBuffer.dll")
     loadRenderPassLibrary("PLTPT.dll")
     loadRenderPassLibrary("ToneMapper.dll")
+    loadRenderPassLibrary("TAA.dll")
 
 
     PLTPT = createPass("PLTPT")
@@ -14,13 +15,19 @@ def render_graph_PLTPT():
     GBufferRT = createPass("GBufferRT", {'samplePattern': SamplePattern.Halton, 'sampleCount': 16, 'useAlphaTest': True})
     g.addPass(GBufferRT, "GBufferRT")
 
-    AccumulatePass = createPass("AccumulatePass", {'enabled': True, 'precisionMode': AccumulatePrecision.Double})
+    #TAAPass = createPass("TAA", {'enabled': False})
+    #g.addPass(TAAPass, "TAA")
+    #g.addEdge("PLTPT.color", "TAA.colorIn")
+    #g.addEdge("GBufferRT.mvec", "TAA.motionVecs")
+
+    AccumulatePass = createPass("AccumulatePass", {'enabled': False, 'precisionMode': AccumulatePrecision.Double})
     g.addPass(AccumulatePass, "AccumulatePass")
 
     ToneMapper = createPass("ToneMapper", {'autoExposure': True, 'exposureCompensation': 0.0})
     g.addPass(ToneMapper, "ToneMapper")
 
     g.addEdge("PLTPT.color", "AccumulatePass.input")
+    #g.addEdge("TAA.colorOut", "AccumulatePass.input")
 
     g.addEdge("GBufferRT.vbuffer", "PLTPT.vbuffer")
     g.addEdge("GBufferRT.viewW", "PLTPT.viewW")

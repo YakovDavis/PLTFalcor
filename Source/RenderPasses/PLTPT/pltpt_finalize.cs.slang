@@ -47,29 +47,6 @@ void forwardHWSSMis(const IMaterialInstance bsdf,
     }
 }
 
-// Unwind last step before measure
-void unwindLastStep(const BounceData bounce, const ShadingData sd, const uint2 pixel, inout PLTBeam beam) {
-
-    //const TriangleHit triangleHit = TriangleHit(bounce.hit);
-    //const VertexData v = gScene.getVertexData(triangleHit);
-
-    const float3 wo = bounce.wi;
-
-    let lod = ExplicitLodTextureSampler(0.f);
-    //const uint materialID = gScene.getMaterialID(triangleHit.instanceID);
-    //const ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -beam.r, lod);
-
-    // Propagate
-    beam.propagate(sd.posW);
-
-    // BSDF
-    let bsdf = gScene.materials.getMaterialInstance(sd, lod);
-    bsdf.eval(sd, wo, bounce.sampledBsdfLobe, beam);
-
-    // Spectral MIS
-    forwardHWSSMis(bsdf, sd, wo, bounce.sampledBsdfLobe, beam);
-}
-
 // Measure beam at sensor
 float3 measure(float pathContribution, inout PLTBeam beam) {
 
@@ -112,6 +89,54 @@ float3 measure(float pathContribution, inout PLTBeam beam) {
     return float3(0.f);
 }
 
+void forwardUnwindStep(const TriangleHit triangleHit,
+                       const VertexData v,
+                       const float3 wo,
+                       const uint sampledBsdfLobe,
+                       inout PLTBeam beam) {
+    let lod = ExplicitLodTextureSampler(0.f);
+    const uint materialID = gScene.getMaterialID(triangleHit.instanceID);
+    const ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -beam.r, lod);
+
+    beam.lastHitNormal = sd.N;
+
+    // Propagate
+    beam.propagate(sd.posW);
+
+    // BSDF
+    let bsdf = gScene.materials.getMaterialInstance(sd, lod);
+    bsdf.eval(sd, wo, sampledBsdfLobe, beam);
+
+    // Spectral MIS
+    forwardHWSSMis(bsdf, sd, wo, sampledBsdfLobe, beam);
+}
+
+// Replay path and evaluate contributions
+void forwardUnwindDI(const BounceData bounce, const TriangleHit triangleHit, const VertexData v, const uint2 pixel, inout PLTBeam beam)
+{
+    const float3 wo = bounce.wi;
+    forwardUnwindStep(triangleHit, v, wo, bounce.sampledBsdfLobe, beam);
+}
+
+// Replay path and evaluate contributions GI
+void forwardUnwindGI(const BounceData bounce, const TriangleHit triangleHit, const VertexData v, const uint2 pixel, const ReservoirGI resGI, inout PLTBeam beam)
+{
+    // First we replay reservoir bounces
+    for (int p=resGI.bounceCount; p>=1; --p) {
+        const BounceData bounce1 = resGI.bounces[p - 1];
+
+        const TriangleHit triangleHit1 = TriangleHit(bounce1.hit);
+        const VertexData v1 = gScene.getVertexData(triangleHit1);
+
+        const float3 wo1 = bounce1.wi;
+
+        forwardUnwindStep(triangleHit1, v1, wo1, bounce1.sampledBsdfLobe, beam);
+    }
+    // Then we replay last bounce
+    const float3 wo = bounce.wi;
+    forwardUnwindStep(triangleHit, v, wo, bounce.sampledBsdfLobe, beam);
+}
+
 [numthreads(16, 16, 1)]
 void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
@@ -145,20 +170,35 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
             const bool sampleTransmission = (lobes & (uint)LobeType::NonDeltaTransmission)!=0;
 
             LightSample ls = {};
-            generateLightSampleFromStored(reservoir.sls, sampleReflection, sampleTransmission, sd, sg, gWavelengthsDI[reservoirIdx], true, ls);
-            unwindLastStep(bounce, sd, pixel, ls.beam);
+            generateLightSampleFromStored(reservoir.sls, sampleReflection, sampleTransmission, sd, sg, gWavelengthsDI[reservoirIdx], ls);
+            forwardUnwindDI(bounce, triangleHit, v, pixel, ls.beam);
             finalColor += measure(bounce.pathContribution, ls.beam) * reservoir.W;
         }
     }
 
     // GI
-    const uint beam0Idx = (pixel.x + (pixel.y * kOutputSize.x)) * kMaxBeamCount;
     const ReservoirGI reservoirGI = ReservoirGI::unpack(reservoirGIBuffer[reservoirIdx]);
-    for (int p = 0; p < reservoirGI.beamCount; ++p)
+    if (reservoirGI.M > 0) // check valid reservoir
     {
-        PLTBeam beam = PLTBeam::unpack(beamBuffer[beam0Idx + p], reservoirGI.posW, reservoirGI.r, reservoirGI.lastHitNormal);
-        unwindLastStep(bounce, sd, pixel, beam);
-        finalColor += measure(bounce.pathContribution, beam);
+        const BounceData bounceGI = reservoirGI.bounces[reservoirGI.bounceCount - 1];
+
+        const TriangleHit triangleHitGI = TriangleHit(bounceGI.hit);
+        const VertexData vGI = gScene.getVertexData(triangleHitGI);
+
+        const uint materialIDGI = gScene.getMaterialID(triangleHitGI.instanceID);
+        const ShadingData sdGI = gScene.materials.prepareShadingData(vGI, materialIDGI, bounceGI.wi, lod);
+
+        let bsdfGI = gScene.materials.getMaterialInstance(sdGI, lod);
+
+        const uint lobes = bsdfGI.getLobes(sdGI);
+
+        const bool sampleReflection = (lobes & (uint)LobeType::NonDeltaReflection)!=0;
+        const bool sampleTransmission = (lobes & (uint)LobeType::NonDeltaTransmission)!=0;
+
+        LightSample ls = {};
+        generateLightSampleFromStored(reservoirGI.sls, sampleReflection, sampleTransmission, sdGI, sg, gWavelengthsDI[reservoirIdx], ls);
+        forwardUnwindGI(bounce, triangleHit, v, pixel, reservoirGI, ls.beam);
+        finalColor += measure(bounce.pathContribution, ls.beam) * reservoirGI.W;
     }
     gOutputColor[pixel] = float4(finalColor, 1.f);
 }

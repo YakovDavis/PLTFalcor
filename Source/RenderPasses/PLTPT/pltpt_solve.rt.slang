@@ -69,7 +69,7 @@ void forwardUnwindStep(const TriangleHit triangleHit,
 }
 
 // Replay path and evaluate contributions
-void forwardUnwind(const int bounceIdx, const uint2 pixel, inout PLTBeam beam, inout ReservoirGI reservoir) {
+void forwardUnwind(const int bounceIdx, const uint2 pixel, inout PLTBeam beam, inout ReservoirGI reservoirGI) {
 
     for (int p=bounceIdx-1; p>=1; --p) { // Everything but the last bounce
         const BounceData bounce = readBounce(p, pixel);
@@ -83,7 +83,7 @@ void forwardUnwind(const int bounceIdx, const uint2 pixel, inout PLTBeam beam, i
     }
     if (bounceIdx > 0)
     {
-        appendBeamGI(beam, pixel, reservoir); //global illumination
+        //appendBeamGI(beam, pixel, reservoirGI); //global illumination
     }
 }
 void manifoldForwardUnwind(const ManifoldSampleData result,
@@ -167,7 +167,7 @@ void evalEmissive(inout PLTSolve solveData,
                   const ShadingData sd,
                   const TriangleHit triangleHit,
                   bool importanceSampleSpectrum,
-                  inout ReservoirGI reservoir) {
+                  inout ReservoirGI reservoirGI) {
     // Emissive geometry
     // Only direct-sample lights if we do not use MIS or no NEE was performed
     const bool didNEE = wasNEEAvailable(bounceIdx, bounce.flags);
@@ -203,7 +203,7 @@ void evalEmissive(inout PLTSolve solveData,
             if (!mHWSSDoMIS && bounce.flags.dispersiveDeltaSegment)
                 beam.collapseToHeroWavelengthOnly();
 
-            forwardUnwind(bounceIdx, pixel, beam, reservoir);
+            forwardUnwind(bounceIdx, pixel, beam, reservoirGI);
         }
     }
 }
@@ -234,7 +234,7 @@ void evalNEE(inout PLTSolve solveData,
              const IMaterialInstance bsdf,
              inout PLTBeam beam,
              const bool NEEEvalCurrentVertex,
-             inout ReservoirGI reservoir) {
+             inout ReservoirGI reservoirGI) {
     if (NEEEvalCurrentVertex) {
         let lod = ExplicitLodTextureSampler(0.f);
         const ShadingData forwardSd = gScene.materials.prepareShadingData(V, materialID, -beam.r, lod);
@@ -248,7 +248,7 @@ void evalNEE(inout PLTSolve solveData,
     }
 
     // Forward unwind beam
-    forwardUnwind(bounceIdx, pixel, beam, reservoir);
+    forwardUnwind(bounceIdx, pixel, beam, reservoirGI);
 }
 
 void NEE(inout PLTSolve solveData,
@@ -260,7 +260,7 @@ void NEE(inout PLTSolve solveData,
          const VertexData V,
          const IMaterialInstance bsdf,
          const BSDFProperties bsdfProp,
-         inout ReservoirGI reservoir) {
+         inout ReservoirGI reservoirGI) {
     const uint lobes = bsdf.getLobes(sd);
 
     const bool allowMSOnCurrentVertex = kDoMSonNEE && bounceIdx>0 && !bounce.flags.lastBounceWasDelta && bsdfProp.canManifoldWalkReflective;
@@ -372,7 +372,7 @@ void NEE(inout PLTSolve solveData,
     }
 
     // Finally, evaluate NEE contributions
-    evalNEE(solveData, bounceIdx, bounce, pixel, V, sd.materialID, bsdf, ls.beam, evalCurrentVertex, reservoir);
+    evalNEE(solveData, bounceIdx, bounce, pixel, V, sd.materialID, bsdf, ls.beam, evalCurrentVertex, reservoirGI);
 
     if (bounceIdx == 0) // DI
     {
@@ -395,6 +395,36 @@ void NEE(inout PLTSolve solveData,
         reservoirBuffer[idx] = outputRes.pack();
         gWavelengthsDI[idx] = ls.beam.wavelengths;
     }
+    else if (bounceIdx <= 2) // GI
+    {
+        const uint idx = pixel.x + pixel.y * kOutputSize.x;
+        StoredLightSample sls = {};
+        sls.pdf = ls.pdf;
+        sls.lightType = ls.lightType;
+        sls.uvOrEnvSample = float2(asfloat(ls.extraData.x), asfloat(ls.extraData.y));
+        sls.triangleOrLightIndex = ls.extraData.z;
+        sls.posW = ls.origin + ls.dir * ls.distance;
+        ReservoirGI newRes = {};
+        const float targetPDF = evalTargetPDF(sd, bsdf, ls.beam.getAverageIntensity(), lobes, ls.beam.hwss_comps, ls.beam.wavelengths, bounce.wi, ls.beam.r);
+        //newRes.update(sls, targetPDF, sls.pdf, solveData.sg);
+        newRes.weightSum = targetPDF / sls.pdf;
+        newRes.M = 1;
+        newRes.W = targetPDF;
+        newRes.sls = sls;
+        newRes.hwss_comps = ls.beam.hwss_comps;
+        newRes.cachedIntensity = ls.beam.getAverageIntensity();
+        newRes.bounceCount = bounceIdx;
+        newRes.bounces[0] = readBounce(1, pixel);
+        if (bounceIdx > 1)
+        {
+            newRes.bounces[1] = readBounce(2, pixel);
+        }
+        if (reservoirGI.update(newRes, targetPDF, solveData.sg))
+        {
+            reservoirGI.sls = sls;
+        }
+        //gWavelengthsDI[idx] = ls.beam.wavelengths;
+    }
 }
 
 
@@ -404,7 +434,7 @@ void onMiss(inout PLTSolve solveData,
             const int bounceIdx,
             const BounceData bounce,
             const uint2 pixel,
-            inout ReservoirGI reservoir) {
+            inout ReservoirGI reservoirGI) {
     const float3 wo = bounce.wi;
     // Only direct-sample lights if we do not use MIS or no NEE was performed
     const bool didNEE = wasNEEAvailable(bounceIdx, bounce.flags);
@@ -423,7 +453,7 @@ void onMiss(inout PLTSolve solveData,
             beam.collapseToHeroWavelengthOnly();
 
         // Forward unwind beam
-        forwardUnwind(bounceIdx, pixel, beam, reservoir);
+        forwardUnwind(bounceIdx, pixel, beam, reservoirGI);
     }
 }
 
@@ -449,7 +479,7 @@ void main() {
 
     reservoirBuffer[reservoirIdx].M = 0; // Invalidate anything that may be here
 
-    ReservoirGI reservoir = {};
+    ReservoirGI reservoirGI = {};
 
     // Evaluate all bounces
     PLTSolve solveData = PLTSolve(sg, tilesg, samplingWavelength);
@@ -458,7 +488,7 @@ void main() {
 
         // Miss?
         if (bounce.flags.miss) {
-            onMiss(solveData, p, bounce, pixel, reservoir);
+            onMiss(solveData, p, bounce, pixel, reservoirGI);
             break;
         }
 
@@ -474,12 +504,12 @@ void main() {
 
         // NEE
         if (kDoNEE) {
-            NEE(solveData, p, bounce, pixel, triangleHit, sd, v, bsdf, bsdfProp, reservoir);
+            NEE(solveData, p, bounce, pixel, triangleHit, sd, v, bsdf, bsdfProp, reservoirGI);
         }
 
         // Emissive material?
         const bool importanceSampleSpectrum = kImportanceSampleEmissiveSpectra;
-        evalEmissive(solveData, p, bounce, pixel, bsdf, bsdfProp, sd, triangleHit, importanceSampleSpectrum, reservoir);
+        evalEmissive(solveData, p, bounce, pixel, bsdf, bsdfProp, sd, triangleHit, importanceSampleSpectrum, reservoirGI);
 
 
         // Geometry debug info
@@ -499,14 +529,7 @@ void main() {
         solveData.pathNormal = sd.N;
     }
 
-
-    reservoir.weightSum = reservoir.W;
-    if (reservoir.W > 0)
-    {
-        reservoir.M = 1;
-    }
-
-    reservoirGIBuffer[reservoirIdx] = reservoir.pack();
+    reservoirGIBuffer[reservoirIdx] = reservoirGI.pack();
 
 
 #if DO_DEBUG_VIEW==1

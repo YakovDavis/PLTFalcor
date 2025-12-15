@@ -2,6 +2,7 @@
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
+import Path;
 import Utils.Sampling.SampleGenerator;
 
 import Utils.Color.ColorHelpers;
@@ -9,6 +10,27 @@ import Utils.Color.ColorHelpers;
 import ReservoirGI;
 import SurfaceData;
 import ReSTIRHelperFunctions;
+
+import Scene.Raytracing;
+import Scene.Intersection;
+import Scene.ShadingData;
+import Scene.Scene;
+
+float evalTargetPDF(const ShadingData sd, const IMaterialInstance bsdf, const float cachedIntensity, const uint lobe, const uint hwss_comps, hwss_t wavelengths, const float3 wi, const float3 wo)
+{
+    PLTBeam testBeam = {};
+    testBeam.wavelengths = wavelengths;
+    testBeam.r = wo;
+    testBeam.hwss_comps = hwss_comps;
+    testBeam.L = hwss_t(cachedIntensity);
+    bsdf.eval(sd, wi, lobe, testBeam);
+    float intensitySum = 0;
+    for (int i = 0; i < hwss_comps; ++i)
+    {
+        intensitySum += testBeam.L[i];
+    }
+    return intensitySum / hwss_comps;
+}
 
 struct TemporalReuseGIPass
 {
@@ -25,8 +47,8 @@ struct TemporalReuseGIPass
     StructuredBuffer<PackedSurfaceData> gPrevSurfaceData;   ///< Surface data for the previous frame.
     RWStructuredBuffer<PackedReservoirGI> gPrevGIReservoirs;  ///< Buffer with reservoirs from the previous frame.
     StructuredBuffer<PackedReservoirGI> gGIReservoirs; ///< Buffer with reservoirs.
-    RWStructuredBuffer<PackedPLTBeam> prevBeamBuffer; ///< Buffer with reservoir beams from the previous frame.
-    StructuredBuffer<PackedPLTBeam> beamBuffer; ///< Buffer with reservoir beams
+    StructuredBuffer<BounceData> firstBounceBuffer;
+    StructuredBuffer<hwss_t> gWavelengthsDI;
 
     void execute(const uint2 pixel)
     {
@@ -86,6 +108,20 @@ struct TemporalReuseGIPass
             return;
         }
 
+        // Retrieve bounce for bsdf eval
+        const BounceData bounce = firstBounceBuffer[bufferIndex];
+
+        const TriangleHit triangleHit = TriangleHit(bounce.hit);
+        const VertexData v = gScene.getVertexData(triangleHit);
+
+        let lod = ExplicitLodTextureSampler(0.f);
+        const uint materialID = gScene.getMaterialID(triangleHit.instanceID);
+        const ShadingData sd = gScene.materials.prepareShadingData(v, materialID, bounce.wi, lod);
+
+        let bsdf = gScene.materials.getMaterialInstance(sd, lod);
+
+        const uint lobes = bsdf.getLobes(sd);
+
         // Get index for the structured buffer access for the previous pixel.
         uint prevBufferIndex = prevPixel.y * gFrameDim.x + prevPixel.x;
 
@@ -97,35 +133,28 @@ struct TemporalReuseGIPass
         prevReservoir.M = min(prevReservoir.M, kMCap);
 
         // Standard combination of multiple reservoirs (Algorithm 4 from the original paper):
-        float prevTargetPdf = 0.f;
-        const uint prevBeam0Idx = (prevPixel.x + (prevPixel.y * gFrameDim.x)) * 4; // TODO: kMaxBeamCount;
-        for (int p = 0; p < prevReservoir.beamCount; ++p) {
-            PLTBeam b = PLTBeam::unpack(prevBeamBuffer[prevBeam0Idx + p], prevReservoir.posW, prevReservoir.r, prevReservoir.lastHitNormal);
-            prevTargetPdf += b.getAverageIntensity();
+        if (prevReservoir.M > 0)
+        {
+            const TriangleHit triangleHit = TriangleHit(prevReservoir.bounces[0].hit);
+            const VertexData v1 = gScene.getVertexData(triangleHit);
+            float3 dir = normalize(v1.posW - v.posW);
+            float prevPdf = evalTargetPDF(sd, bsdf, prevReservoir.cachedIntensity, lobes, prevReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, dir);
+            outputReservoir.update(prevReservoir, prevPdf, sg);
         }
-        bool prevChosen = outputReservoir.update(prevReservoir, prevTargetPdf, sg);
 
-        float targetPdf = 0.f;
-        const uint beam0Idx = (pixel.x + (pixel.y * gFrameDim.x)) * 4; // TODO: kMaxBeamCount;
-        for (int p = 0; p < currentReservoir.beamCount; ++p) {
-            PLTBeam b = PLTBeam::unpack(beamBuffer[beam0Idx + p], currentReservoir.posW, currentReservoir.r, currentReservoir.lastHitNormal);
-            targetPdf += b.getAverageIntensity();
+        if (currentReservoir.M > 0)
+        {
+            const TriangleHit triangleHit = TriangleHit(currentReservoir.bounces[0].hit);
+            const VertexData v1 = gScene.getVertexData(triangleHit);
+            float3 dir = normalize(v1.posW - v.posW);
+            float currPdf = evalTargetPDF(sd, bsdf, currentReservoir.cachedIntensity, lobes, currentReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, dir);
+            outputReservoir.update(currentReservoir, currPdf, sg);
         }
-        bool currentChosen = outputReservoir.update(currentReservoir, targetPdf, sg);
 
         outputReservoir.W = outputReservoir.W  > 0.f ? (outputReservoir.weightSum / outputReservoir.M) / outputReservoir.W : 0.f;
 
         // Store combined reservoir.
         gPrevGIReservoirs[bufferIndex] = outputReservoir.pack();
-
-        // Move beams from prev to current if prev chosen
-        if (currentChosen)
-        {
-            for (int p = 0; p < 4; ++p) // TODO: un-hardcode max beam count
-            {
-                prevBeamBuffer[beam0Idx + p] = beamBuffer[beam0Idx + p];
-            }
-        }
     }
 }
 

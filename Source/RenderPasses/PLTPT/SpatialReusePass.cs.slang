@@ -47,10 +47,8 @@ struct SpatialReusePass
 
     // Resources
     StructuredBuffer<PackedReservoir> gReservoirs; ///< Buffer with packed reservoirs.
-    StructuredBuffer<PackedPLTBeam> beamBuffer; ///< Buffer with packed PLT beams.
     StructuredBuffer<PackedSurfaceData> gSurfaceData;     ///< Surface data for the current frame.
     RWStructuredBuffer<PackedReservoir> gOutReservoirs; ///< Output buffer with packed reservoirs.
-    RWStructuredBuffer<PackedPLTBeam> outBeamBuffer; ///< Output buffer with packed PLT beams.
     StructuredBuffer<BounceData> firstBounceBuffer;
     StructuredBuffer<hwss_t> gWavelengthsDI;
 

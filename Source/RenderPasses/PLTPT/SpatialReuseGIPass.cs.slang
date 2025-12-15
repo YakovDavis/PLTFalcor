@@ -1,6 +1,7 @@
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
+import Path;
 import Utils.Geometry.GeometryHelpers;
 import Scene.RaytracingInline;
 import Utils.Sampling.SampleGenerator;
@@ -8,6 +9,27 @@ import Utils.Sampling.SampleGenerator;
 import ReservoirGI;
 import SurfaceData;
 import ReSTIRHelperFunctions;
+
+import Scene.Raytracing;
+import Scene.Intersection;
+import Scene.ShadingData;
+import Scene.Scene;
+
+float evalTargetPDF(const ShadingData sd, const IMaterialInstance bsdf, const float cachedIntensity, const uint lobe, const uint hwss_comps, hwss_t wavelengths, const float3 wi, const float3 wo)
+{
+    PLTBeam testBeam = {};
+    testBeam.wavelengths = wavelengths;
+    testBeam.r = wo;
+    testBeam.hwss_comps = hwss_comps;
+    testBeam.L = hwss_t(cachedIntensity);
+    bsdf.eval(sd, wi, lobe, testBeam);
+    float intensitySum = 0;
+    for (int i = 0; i < hwss_comps; ++i)
+    {
+        intensitySum += testBeam.L[i];
+    }
+    return intensitySum / hwss_comps;
+}
 
 // Shadow ray epsilon is a small value used to nudge the shadow ray origin along the normal
 // to avoid self-intersection due to numerical precision issues.
@@ -27,10 +49,10 @@ struct SpatialReuseGIPass
 
     // Resources
     StructuredBuffer<PackedReservoirGI> gGIReservoirs; ///< Buffer with packed reservoirs.
-    StructuredBuffer<PackedPLTBeam> beamBuffer; ///< Buffer with packed PLT beams.
     StructuredBuffer<PackedSurfaceData> gSurfaceData;     ///< Surface data for the current frame.
     RWStructuredBuffer<PackedReservoirGI> gOutGIReservoirs; ///< Output buffer with packed reservoirs.
-    RWStructuredBuffer<PackedPLTBeam> outBeamBuffer; ///< Output buffer with packed PLT beams.
+    StructuredBuffer<BounceData> firstBounceBuffer;
+    StructuredBuffer<hwss_t> gWavelengthsDI;
 
     bool evalSampleVisibility(float3 pos, float3 samplePoint)
     {
@@ -67,19 +89,27 @@ struct SpatialReuseGIPass
         if (!surfaceData.isValid())
             return;
 
-        float currReservoirTargetPDF = 0.f;
-        const uint currBeam0Idx = (pixel.x + (pixel.y * gFrameDim.x)) * 4; // TODO: kMaxBeamCount;
-        for (int p = 0; p < currentReservoir.beamCount; ++p) {
-            PLTBeam b = PLTBeam::unpack(beamBuffer[currBeam0Idx + p], currentReservoir.posW, currentReservoir.r, currentReservoir.lastHitNormal);
-            currReservoirTargetPDF += b.getAverageIntensity();
-        }
-        bool currChosen = outputReservoir.update(currentReservoir, currReservoirTargetPDF, sg);
-        // Move beams from current to output if chosen
-        if (currChosen)
+        // Retrieve bounce for bsdf eval
+        const BounceData bounce = firstBounceBuffer[bufferIndex];
+
+        const TriangleHit triangleHit = TriangleHit(bounce.hit);
+        const VertexData v = gScene.getVertexData(triangleHit);
+
+        let lod = ExplicitLodTextureSampler(0.f);
+        const uint materialID = gScene.getMaterialID(triangleHit.instanceID);
+        const ShadingData sd = gScene.materials.prepareShadingData(v, materialID, bounce.wi, lod);
+
+        let bsdf = gScene.materials.getMaterialInstance(sd, lod);
+
+        const uint lobes = bsdf.getLobes(sd);
+
+        if (currentReservoir.M > 0)
         {
-            for (int p = 0; p < currentReservoir.beamCount; ++p) {
-                outBeamBuffer[currBeam0Idx + p] = beamBuffer[currBeam0Idx + p];
-            }
+            const TriangleHit triangleHit = TriangleHit(currentReservoir.bounces[0].hit);
+            const VertexData v1 = gScene.getVertexData(triangleHit);
+            float3 dir = normalize(v1.posW - v.posW);
+            float currPdf = evalTargetPDF(sd, bsdf, currentReservoir.cachedIntensity, lobes, currentReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, dir);
+            outputReservoir.update(currentReservoir, currPdf, sg);
         }
 
         float3 rayOrigin = computeRayOrigin(surfaceData.position, surfaceData.normal);
@@ -92,7 +122,7 @@ struct SpatialReuseGIPass
             uint2 neighborPixel = getRandomNeighborPixel(pixel, sg1, radius);
 
             // Discard pixel if out of bounds
-	    if(any(neighborPixel >= gFrameDim) || any(neighborPixel < 0))
+	        if(any(neighborPixel >= gFrameDim) || any(neighborPixel < 0))
                 continue;
 
             uint neighborBufferIndex = getBufferIndex(neighborPixel, gFrameDim);
@@ -118,24 +148,15 @@ struct SpatialReuseGIPass
             }
 
             float neighborReservoirTargetPDF = 0.f;
-            const uint neighborBeam0Idx = (pixel.x + (pixel.y * gFrameDim.x)) * 4; // TODO: kMaxBeamCount;
             float3 neighborSamplePoint = float3(0.f);
             float3 neighborSampleNormal = float3(0.f);
-            for (int p = 0; p < neighborReservoir.beamCount; ++p) {
-                PLTBeam b = PLTBeam::unpack( beamBuffer[neighborBeam0Idx + p], neighborReservoir.posW, neighborReservoir.r, neighborReservoir.lastHitNormal);
-                if (p == 0) // Record a (shared) beam position to compute Jacobian
-                {
-                    neighborSamplePoint = b.posW;
-                }
-                if (any(b.lastHitNormal != 0.f)) // Record a last hit normal (should be shared for everything except DI)
-                {
-                    neighborSampleNormal = b.lastHitNormal;
-                }
-                if (b.hwss_comps == 1)
-                {
-                    continue; // skip delta rays
-                }
-                neighborReservoirTargetPDF += b.getAverageIntensity();
+            {
+                const TriangleHit triangleHit = TriangleHit(neighborReservoir.bounces[0].hit);
+                const VertexData v1 = gScene.getVertexData(triangleHit);
+                neighborSamplePoint = v1.posW;
+                neighborSampleNormal = v1.normalW;
+                float3 dir = normalize(v1.posW - v.posW);
+                neighborReservoirTargetPDF = evalTargetPDF(sd, bsdf, neighborReservoir.cachedIntensity, lobes, neighborReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, dir);
             }
 
             if (any(neighborSampleNormal != 0.f)) // otherwise only direct illumination, jacobian = 1
@@ -179,14 +200,6 @@ struct SpatialReuseGIPass
             }
 
             bool neighborChosen = outputReservoir.update(neighborReservoir, neighborReservoirTargetPDF, sg);
-            // Move beams from neighbor to output if neighbor chosen
-            if (neighborChosen)
-            {
-                for (int p = 0; p < 4; ++p) // TODO: un-hardcode max beam count
-                {
-                    outBeamBuffer[currBeam0Idx + p] = beamBuffer[neighborBeam0Idx + p];
-                }
-            }
         }
 
         outputReservoir.W = outputReservoir.W > 0.f ? (outputReservoir.weightSum / outputReservoir.M) / (outputReservoir.W) : 0.f;

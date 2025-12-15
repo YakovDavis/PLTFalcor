@@ -235,7 +235,7 @@ bool generateEnvMapSampleFromStored<S: ISampleGenerator>(const StoredLightSample
     return any(L > 0.f);
 }
 
-bool generateEmissiveSampleFromStored<S : ISampleGenerator>(const StoredLightSample sls, const ShadingData sd, inout S sg, const hwss_t wavelengths, bool importanceSampleSpectrum, out LightSample ls) {
+bool generateEmissiveSampleFromStored<S : ISampleGenerator>(const StoredLightSample sls, const ShadingData sd, inout S sg, const hwss_t wavelengths, out LightSample ls) {
     ls = {}; // Default initialization to avoid divergence at returns.
     if (!kUseEmissiveLights) return false;
 
@@ -257,7 +257,7 @@ bool generateEmissiveSampleFromStored<S : ISampleGenerator>(const StoredLightSam
     return any(L > 0.f);
 }
 
-bool generateAnalyticLightSampleFromStored<S: ISampleGenerator>(const StoredLightSample sls, const ShadingData sd, inout S sg, const hwss_t wavelengths, bool importanceSampleSpectrum, out LightSample ls) {
+bool generateAnalyticLightSampleFromStored<S: ISampleGenerator>(const StoredLightSample sls, const ShadingData sd, inout S sg, const hwss_t wavelengths, out LightSample ls) {
     ls = {};
     if (sls.lightType != (uint)SampledLightType::Analytic)
     {
@@ -302,7 +302,6 @@ bool generateLightSampleFromStored<S: ISampleGenerator>(const StoredLightSample 
                                                         const ShadingData sd,
                                                         inout S sg,
                                                         const hwss_t wavelengths,
-                                                        bool importanceSampleSpectrum,
                                                         out LightSample ls) {
     ls = {};
     uint lightType = sls.lightType;
@@ -314,9 +313,9 @@ bool generateLightSampleFromStored<S: ISampleGenerator>(const StoredLightSample 
     if (lightType == (uint)SampledLightType::EnvMap)
         valid = generateEnvMapSampleFromStored(sls, sd, sg, wavelengths, ls);
     if (lightType == (uint)SampledLightType::Emissive)
-        valid = generateEmissiveSampleFromStored(sls, sd, sg, wavelengths, importanceSampleSpectrum, ls);
+        valid = generateEmissiveSampleFromStored(sls, sd, sg, wavelengths, ls);
     if (lightType == (uint)SampledLightType::Analytic)
-        valid = generateAnalyticLightSampleFromStored(sls, sd, sg, wavelengths, importanceSampleSpectrum, ls);
+        valid = generateAnalyticLightSampleFromStored(sls, sd, sg, wavelengths, ls);
 
     ls.lightType = lightType;
     ls.pdf *= selectionPdf;

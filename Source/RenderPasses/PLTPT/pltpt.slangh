@@ -136,7 +136,6 @@ RWStructuredBuffer<BounceData> bounceBuffer;
 /** Reservoir storage */
 
 RWStructuredBuffer<PackedReservoir> reservoirBuffer;
-RWStructuredBuffer<PackedPLTBeam> beamBuffer;
 RWStructuredBuffer<PackedReservoirGI> reservoirGIBuffer;
 
 // Read a bounce
@@ -174,54 +173,6 @@ void appendBounce(inout Path path, const float3 wi) {
     PackedHitInfo info = {};
     appendBounce(path, info, wi, 0);
 }
-
-/*PLTBeam readBeam(const int p, const uint2 pixel)
-{
-    const uint idx = (pixel.x + pixel.y * kOutputSize.x) * kMaxBeamCount + p;
-    return PLTBeam::unpack(beamBuffer[idx]);
-}*/
-
-bool appendBeamGI(const PLTBeam beam, const uint2 pixel, inout ReservoirGI reservoirGI)
-{
-    const uint beamCount = reservoirGI.beamCount;
-
-    if (beamCount > kMaxBeamCount)
-        return false;
-
-    const uint idx = (pixel.x + pixel.y * kOutputSize.x) * kMaxBeamCount + beamCount;
-    beamBuffer[idx] = beam.pack();
-    reservoirGI.beamCount = beamCount + 1;
-    reservoirGI.W += beam.getAverageIntensity();
-    reservoirGI.posW = beam.posW;
-    reservoirGI.r = beam.r;
-    reservoirGI.lastHitNormal = beam.lastHitNormal;
-    return true;
-}
-
-/*bool recordBeam(const PLTBeam beam, const uint2 pixel)
-{
-    const uint idx = pixel.x + pixel.y * kOutputSize.x;
-    Reservoir reservoir;
-    reservoir.W = beam.getAverageIntensity();
-    reservoir.weightSum = reservoir.W;
-    reservoir.M = 1;
-    reservoir.posW = beam.posW;
-    reservoir.r = beam.r;
-    reservoir.distant = beam.distant;
-    reservoir.Theta = beam.Theta;
-    reservoir.t = beam.t;
-    reservoir.L = beam.L;
-    reservoir.L1 = beam.L1;
-    reservoir.L2 = beam.L2;
-    reservoir.L3 = beam.L3;
-    reservoir.wavelengths = beam.wavelengths;
-    reservoir.spectralPDFs = beam.spectralPDFs;
-    reservoir.hwss_comps = beam.hwss_comps;
-
-    reservoirBuffer[idx] = reservoir.pack();
-
-    return true;
-}*/
 
 /** Russian Roulette */
 float RR(const float rrVal, const float rrE, const float sample) {

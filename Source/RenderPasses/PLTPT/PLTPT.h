@@ -84,13 +84,12 @@ private:
     EmissiveLightSampler::SharedPtr mpEmissiveSampler;
 
     uint32_t                    mTileSize = 512;                ///< Size of a tile
-    uint                        mMaxBounces = 1;               ///< Max number of indirect bounces (0 = none).
+    uint                        mMaxBounces = 2;               ///< Max number of indirect bounces (0 = none).
     Buffer::SharedPtr           mpBounceBuffer;                 ///< Per-tile bounce buffer.
     uint                        mMaxBeams = 4;                 ///< Max beams to be saved for the final pass and reuse
     uint                        mReservoirBufferIndex = 0;
     std::vector<Buffer::SharedPtr>           mpReservoirBuffers;                 ///< Per-frame reservoir buffers (vector for swap).
     std::vector<Buffer::SharedPtr>           mpReservoirGIBuffers;                 ///< Per-frame reservoir gi buffers (vector for swap).
-    std::vector<Buffer::SharedPtr>           mpBeamBuffers;                 ///< Per-frame plt beam buffers (vector for swap).
 
     Buffer::SharedPtr           mpWavelengthsDIBuffer;               ///< Per-frame buffer with current sampled wavelengths in each pixel
 
@@ -120,8 +119,8 @@ private:
     bool                        mDoTemporalReuse = true;
     bool                        mDoSpatialReuse = true;
 
-    bool                        mDoTemporalReuseGI = false;
-    bool                        mDoSpatialReuseGI = false;
+    bool                        mDoTemporalReuseGI = true;
+    bool                        mDoSpatialReuseGI = true;
 
     bool                        mDoNEE = true;
     bool                        mDoMIS = true;

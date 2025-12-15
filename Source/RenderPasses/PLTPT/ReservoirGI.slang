@@ -1,40 +1,59 @@
 
 #include "Utils/Math/MathConstants.slangh"
 
+import Rendering.Lights.StoredLightSample;
+
+import Utils.HWSS;
 import Path;
 import Utils.Sampling.SampleGenerator;
 import Rendering.PLT;
 
-// 48 bytes
+// 128 bytes
 struct PackedReservoirGI
 {
     // 4x4B
     float W;
     uint M;
-    uint beamCount;
-    float lastHitNormal_x;
+    uint bounceCount;
+    float cachedIntensity;
 
-    // 2x16B
-    float4 posW_lastHitNormal_y;
-    float4 r_lastHitNormal_z;
+    // 8x4B
+    StoredLightSample sls;
+    uint hwss_comps;
+
+    // 2x40B
+    BounceData bounces[2];
 };
 
 struct ReservoirGI {
     float weightSum; ///< The sum of weights.
     float W;         ///< The weight of the reservoir.
     uint M;          ///< The number of samples seen so far.
-    uint beamCount;
 
-    float3 posW;
-    float3 r;
-    float3 lastHitNormal;
+    uint bounceCount;
+
+    uint hwss_comps;
+    float cachedIntensity; ///< Average intensity between wavelength of the initial beam
+
+    StoredLightSample sls;
+
+    BounceData bounces[2];
 
     __init()
     {
         this.weightSum = 0;
         this.W = 0;
         this.M = 0;
-        this.beamCount = 0;
+
+        this.bounceCount = 0;
+        this.hwss_comps = 0;
+
+        this.cachedIntensity = 0;
+
+        this.bounces[0] = {};
+        this.bounces[1] = {};
+
+        this.sls = {};
     }
 
     /*[mutating]
@@ -63,10 +82,15 @@ struct ReservoirGI {
 
         if (isSelected) {
             this.W = targetPDF;
-            this.beamCount = reservoir.beamCount;
-            this.posW = reservoir.posW;
-            this.r = reservoir.r;
-            this.lastHitNormal = reservoir.lastHitNormal;
+            this.bounceCount = reservoir.bounceCount;
+            this.hwss_comps = reservoir.hwss_comps;
+
+            this.cachedIntensity = reservoir.cachedIntensity;
+
+            this.bounces[0] = reservoir.bounces[0];
+            this.bounces[1] = reservoir.bounces[1];
+
+            this.sls = reservoir.sls;
         }
 
         return isSelected;
@@ -86,11 +110,12 @@ struct ReservoirGI {
             reservoir.M = 0;
         }
 
-        reservoir.beamCount = packedReservoir.beamCount;
+        reservoir.bounceCount = packedReservoir.bounceCount;
+        reservoir.hwss_comps = packedReservoir.hwss_comps;
+        reservoir.cachedIntensity = packedReservoir.cachedIntensity;
 
-        reservoir.posW = packedReservoir.posW_lastHitNormal_y.xyz;
-        reservoir.r = packedReservoir.r_lastHitNormal_z.xyz;
-        reservoir.lastHitNormal = float3(packedReservoir.lastHitNormal_x, packedReservoir.posW_lastHitNormal_y.w, packedReservoir.r_lastHitNormal_z.w);
+        reservoir.bounces[0] = packedReservoir.bounces[0];
+        reservoir.bounces[1] = packedReservoir.bounces[1];
 
         return reservoir;
     }
@@ -100,10 +125,13 @@ struct ReservoirGI {
         PackedReservoirGI packedReservoir = {};
         packedReservoir.W = this.W;
         packedReservoir.M = this.M;
-        packedReservoir.beamCount = this.beamCount;
-        packedReservoir.lastHitNormal_x = this.lastHitNormal.x;
-        packedReservoir.posW_lastHitNormal_y = float4(this.posW, this.lastHitNormal.y);
-        packedReservoir.r_lastHitNormal_z = float4(this.r, this.lastHitNormal.z);
+
+        packedReservoir.bounceCount = this.bounceCount;
+        packedReservoir.hwss_comps = this.hwss_comps;
+        packedReservoir.cachedIntensity = this.cachedIntensity;
+
+        packedReservoir.bounces[0] = this.bounces[0];
+        packedReservoir.bounces[1] = this.bounces[1];
         return packedReservoir;
     }
 }

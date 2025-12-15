@@ -63,7 +63,7 @@ namespace {
     static constexpr uint32_t kPerBeamPayloadSizeBytes = 80u;
     static constexpr uint32_t kReservoirPayloadSizeBytes = 48u;
     static constexpr uint32_t kWavelengthsSizeBytes = 16u;
-    static constexpr uint32_t kReservoirGIPayloadSizeBytes = 48u;
+    static constexpr uint32_t kReservoirGIPayloadSizeBytes = 128u;
     static constexpr uint32_t kMaxRecursionDepth = 1u;
 
     static constexpr uint kVisibilityRayId = 0;
@@ -504,7 +504,6 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
         var["reservoirBuffer"] = mpReservoirBuffers[mReservoirBufferIndex];
         var["bounceBuffer"] = mpBounceBuffer;
         var["reservoirGIBuffer"] = mpReservoirGIBuffers[mReservoirBufferIndex];
-        var["beamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
     };
 
     varSetter(mSampleTracer.pVars->getRootVar());
@@ -681,7 +680,6 @@ void PLTPT::createBuffers(RenderContext* pRenderContext, const RenderData& rende
     const auto pixelCount = (uint32_t)(targetDim.x * targetDim.y);
 
     const auto bounceBufferElements = (mMaxBounces+1u) * (mTileSize * mTileSize);
-    const auto beamBufferElements = mMaxBeams * pixelCount;
 
     mpBounceBuffer = nullptr;
     mpReservoirBuffers.clear();
@@ -710,12 +708,6 @@ void PLTPT::createBuffers(RenderContext* pRenderContext, const RenderData& rende
 
     for (uint i = 0; i < 2; ++i)
     {
-        mpBeamBuffers.push_back(Buffer::createStructured(
-            this->mpDevice.get(), kPerBeamPayloadSizeBytes, (uint32_t)beamBufferElements,
-            Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
-        ));
-        mpBeamBuffers[i]->setName("PLTPT::mpBeamBuffer_" + std::to_string(i));
-
         mpReservoirBuffers.push_back(Buffer::createStructured(
             this->mpDevice.get(), kReservoirPayloadSizeBytes, pixelCount,
             Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
@@ -779,10 +771,8 @@ void PLTPT::spatialReusePass(RenderContext* pRenderContext, const RenderData& re
 
     var["gReservoirs"] = mpReservoirBuffers[(mReservoirBufferIndex + 1) % 2];
     var["gSurfaceData"] = mpSurfaceData[(mReservoirBufferIndex + 1) % 2];
-    var["beamBuffer"] = mpBeamBuffers[(mReservoirBufferIndex + 1) % 2];
 
     var["gOutReservoirs"] = mpReservoirBuffers[mReservoirBufferIndex];
-    var["outBeamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
 
     var["firstBounceBuffer"] = mpFirstBounceBuffer;
     var["gWavelengthsDI"] = mpWavelengthsDIBuffer;
@@ -807,11 +797,12 @@ void PLTPT::temporalReuseGIPass(RenderContext* pRenderContext, const RenderData&
     var["gMotionVectors"] = renderData.getTexture(kInputMotionVectors);
     var["gGIReservoirs"] = mpReservoirGIBuffers[mReservoirBufferIndex];
     var["gSurfaceData"] = mpSurfaceData[mReservoirBufferIndex];
-    var["beamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
 
     var["gPrevSurfaceData"] = mpSurfaceData[(mReservoirBufferIndex + 1) % 2];
     var["gPrevGIReservoirs"] = mpReservoirGIBuffers[(mReservoirBufferIndex + 1) % 2];
-    var["prevBeamBuffer"] = mpBeamBuffers[(mReservoirBufferIndex + 1) % 2];
+
+    var["firstBounceBuffer"] = mpFirstBounceBuffer;
+    var["gWavelengthsDI"] = mpWavelengthsDIBuffer;
 
     //var["gDebug"] = renderData.getTexture(kDebug);
 
@@ -834,10 +825,11 @@ void PLTPT::spatialReuseGIPass(RenderContext* pRenderContext, const RenderData& 
 
     var["gGIReservoirs"] = mpReservoirGIBuffers[(mReservoirBufferIndex + 1) % 2];
     var["gSurfaceData"] = mpSurfaceData[(mReservoirBufferIndex + 1) % 2];
-    var["beamBuffer"] = mpBeamBuffers[(mReservoirBufferIndex + 1) % 2];
 
     var["gOutGIReservoirs"] = mpReservoirGIBuffers[mReservoirBufferIndex];
-    var["outBeamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
+
+    var["firstBounceBuffer"] = mpFirstBounceBuffer;
+    var["gWavelengthsDI"] = mpWavelengthsDIBuffer;
 
     mpSpatialReuseGIPass["gScene"] = mpScene->getParameterBlock();
 
@@ -866,7 +858,6 @@ void PLTPT::finalizePass(RenderContext* pRenderContext, const RenderData& render
 
     var["reservoirBuffer"] = mpReservoirBuffers[mReservoirBufferIndex];
     var["reservoirGIBuffer"] = mpReservoirGIBuffers[mReservoirBufferIndex];
-    var["beamBuffer"] = mpBeamBuffers[mReservoirBufferIndex];
     var["firstBounceBuffer"] = mpFirstBounceBuffer;
     var["gWavelengthsDI"] = mpWavelengthsDIBuffer;
 
