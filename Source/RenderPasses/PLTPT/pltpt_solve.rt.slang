@@ -70,8 +70,8 @@ void forwardUnwindStep(const TriangleHit triangleHit,
 }
 
 // Replay path and evaluate contributions
-void forwardUnwind(const int bounceIdx, const uint2 pixel, inout PLTBeam beam, inout ReservoirGI reservoirGI) {
-
+void forwardUnwind(const int bounceIdx, const uint2 pixel, inout PLTBeam beam, inout ReservoirGI reservoirGI)
+{
     for (int p=bounceIdx-1; p>=1; --p) { // Everything but the last bounce
         const BounceData bounce = readBounce(p, pixel);
 
@@ -82,11 +82,8 @@ void forwardUnwind(const int bounceIdx, const uint2 pixel, inout PLTBeam beam, i
 
         forwardUnwindStep(triangleHit, v, wo, bounce.sampledBsdfLobe, beam);
     }
-    if (bounceIdx > 0)
-    {
-        //appendBeamGI(beam, pixel, reservoirGI); //global illumination
-    }
 }
+
 void manifoldForwardUnwind(const ManifoldSampleData result,
                            const float3 origin,
                            inout PLTBeam beam) {
@@ -406,11 +403,12 @@ void NEE(inout PLTSolve solveData,
         sls.triangleOrLightIndex = ls.extraData.z;
         sls.posW = ls.origin + ls.dir * ls.distance;
         ReservoirGI newRes = {};
-        const float targetPDF = evalTargetPDF(sd, bsdf, ls.beam.getAverageIntensity(), lobes, ls.beam.hwss_comps, ls.beam.wavelengths, bounce.wi, ls.beam.r);
+        const float targetPDF = ls.beam.getAverageIntensity();
         //newRes.update(sls, targetPDF, sls.pdf, solveData.sg);
         newRes.weightSum = targetPDF / sls.pdf;
         newRes.M = 1;
-        newRes.W = targetPDF;
+        const float bsdfPdf = bsdf.pdf(sd, ls.dir, ls.beam.wavelengths.x);
+        newRes.W = targetPDF * bsdfPdf;
         newRes.sls = sls;
         newRes.hwss_comps = ls.beam.hwss_comps;
         newRes.cachedIntensity = ls.beam.getAverageIntensity();
@@ -425,6 +423,7 @@ void NEE(inout PLTSolve solveData,
             reservoirGI.sls = sls;
             gWavelengthsGI[idx] = ls.beam.wavelengths;
         }
+        reservoirGI.W = reservoirGI.W > 0.f ? (reservoirGI.weightSum / reservoirGI.M) / reservoirGI.W : 0.f;
     }
 }
 

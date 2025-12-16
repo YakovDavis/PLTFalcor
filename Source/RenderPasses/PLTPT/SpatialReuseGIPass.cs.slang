@@ -15,22 +15,6 @@ import Scene.Intersection;
 import Scene.ShadingData;
 import Scene.Scene;
 
-float evalTargetPDF(const ShadingData sd, const IMaterialInstance bsdf, const float cachedIntensity, const uint lobe, const uint hwss_comps, hwss_t wavelengths, const float3 wi, const float3 wo)
-{
-    PLTBeam testBeam = {};
-    testBeam.wavelengths = wavelengths;
-    testBeam.r = wo;
-    testBeam.hwss_comps = hwss_comps;
-    testBeam.L = hwss_t(cachedIntensity);
-    bsdf.eval(sd, wi, lobe, testBeam);
-    float intensitySum = 0;
-    for (int i = 0; i < hwss_comps; ++i)
-    {
-        intensitySum += testBeam.L[i];
-    }
-    return intensitySum / hwss_comps;
-}
-
 // Shadow ray epsilon is a small value used to nudge the shadow ray origin along the normal
 // to avoid self-intersection due to numerical precision issues.
 static const float kShadowRayEpsilon = 0.0001f;
@@ -38,7 +22,7 @@ static const float kShadowRayEpsilon = 0.0001f;
 struct SpatialReuseGIPass
 {
     static const float FLT_LARGE = 1e20f;
-    static const uint kMCap = 300;
+    static const uint kMCap = 30;
     static const uint kNeighborCount = 5;
     static const float kDepthThreshold = 0.2f;
     static const float kNormalThreshold = 0.5f;
@@ -105,10 +89,7 @@ struct SpatialReuseGIPass
 
         if (currentReservoir.M > 0)
         {
-            const TriangleHit triangleHit = TriangleHit(currentReservoir.bounces[0].hit);
-            const VertexData v1 = gScene.getVertexData(triangleHit);
-            float3 dir = normalize(v1.posW - v.posW);
-            float currPdf = evalTargetPDF(sd, bsdf, currentReservoir.cachedIntensity, lobes, currentReservoir.hwss_comps, gWavelengthsGI[bufferIndex], bounce.wi, dir);
+            float currPdf = currentReservoir.cachedIntensity;
             outputReservoir.update(currentReservoir, currPdf, sg);
         }
 
@@ -155,8 +136,7 @@ struct SpatialReuseGIPass
                 const VertexData v1 = gScene.getVertexData(triangleHit);
                 neighborSamplePoint = v1.posW;
                 neighborSampleNormal = v1.normalW;
-                float3 dir = normalize(v1.posW - v.posW);
-                neighborReservoirTargetPDF = evalTargetPDF(sd, bsdf, neighborReservoir.cachedIntensity, lobes, neighborReservoir.hwss_comps, gWavelengthsGI[bufferIndex], bounce.wi, dir);
+                neighborReservoirTargetPDF = neighborReservoir.cachedIntensity;
             }
 
             if (any(neighborSampleNormal != 0.f)) // otherwise only direct illumination, jacobian = 1

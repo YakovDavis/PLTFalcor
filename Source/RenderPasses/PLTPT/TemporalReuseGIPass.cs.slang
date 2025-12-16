@@ -16,25 +16,9 @@ import Scene.Intersection;
 import Scene.ShadingData;
 import Scene.Scene;
 
-float evalTargetPDF(const ShadingData sd, const IMaterialInstance bsdf, const float cachedIntensity, const uint lobe, const uint hwss_comps, hwss_t wavelengths, const float3 wi, const float3 wo)
-{
-    PLTBeam testBeam = {};
-    testBeam.wavelengths = wavelengths;
-    testBeam.r = wo;
-    testBeam.hwss_comps = hwss_comps;
-    testBeam.L = hwss_t(cachedIntensity);
-    bsdf.eval(sd, wi, lobe, testBeam);
-    float intensitySum = 0;
-    for (int i = 0; i < hwss_comps; ++i)
-    {
-        intensitySum += testBeam.L[i];
-    }
-    return intensitySum / hwss_comps;
-}
-
 struct TemporalReuseGIPass
 {
-    static const uint kMCap = 30;
+    static const uint kMCap = 5;
     static const float kMaxOffset = 5.f;
     static const uint kAttemptCount = 1;
 
@@ -135,23 +119,19 @@ struct TemporalReuseGIPass
         // Standard combination of multiple reservoirs (Algorithm 4 from the original paper):
         if (prevReservoir.M > 0)
         {
-            const TriangleHit triangleHit = TriangleHit(prevReservoir.bounces[0].hit);
-            const VertexData v1 = gScene.getVertexData(triangleHit);
-            float3 dir = normalize(v1.posW - v.posW);
-            float prevPdf = evalTargetPDF(sd, bsdf, prevReservoir.cachedIntensity, lobes, prevReservoir.hwss_comps, gWavelengthsGI[bufferIndex], bounce.wi, dir);
+            //float3 dir = normalize(currentReservoir.sls.posW - v.posW);
+            float prevPdf = prevReservoir.cachedIntensity; // * bsdf.pdf(sd, bounce.wi, gWavelengthsGI[bufferIndex][0]);
             outputReservoir.update(prevReservoir, prevPdf, sg);
         }
 
         if (currentReservoir.M > 0)
         {
-            const TriangleHit triangleHit = TriangleHit(currentReservoir.bounces[0].hit);
-            const VertexData v1 = gScene.getVertexData(triangleHit);
-            float3 dir = normalize(v1.posW - v.posW);
-            float currPdf = evalTargetPDF(sd, bsdf, currentReservoir.cachedIntensity, lobes, currentReservoir.hwss_comps, gWavelengthsGI[bufferIndex], bounce.wi, dir);
+            //float3 dir = normalize(currentReservoir.sls.posW - v.posW);
+            float currPdf = currentReservoir.cachedIntensity; //  * bsdf.pdf(sd, bounce.wi, gWavelengthsGI[bufferIndex][0]);
             outputReservoir.update(currentReservoir, currPdf, sg);
         }
 
-        outputReservoir.W = outputReservoir.W  > 0.f ? (outputReservoir.weightSum / outputReservoir.M) / outputReservoir.W : 0.f;
+        outputReservoir.W = outputReservoir.W  > 0.f ? outputReservoir.weightSum / (outputReservoir.M * outputReservoir.W) : 0.f;
 
         // Store combined reservoir.
         gPrevGIReservoirs[bufferIndex] = outputReservoir.pack();
