@@ -91,7 +91,8 @@ private:
     std::vector<Buffer::SharedPtr>           mpReservoirBuffers;                 ///< Per-frame reservoir buffers (vector for swap).
     std::vector<Buffer::SharedPtr>           mpReservoirGIBuffers;                 ///< Per-frame reservoir gi buffers (vector for swap).
 
-    Buffer::SharedPtr           mpWavelengthsDIBuffer;               ///< Per-frame buffer with current sampled wavelengths in each pixel
+    Buffer::SharedPtr           mpWavelengthsDIBuffer;               ///< Per-frame buffer with current sampled wavelengths in each pixel for direct illumination
+    Buffer::SharedPtr           mpWavelengthsGIBuffer;               ///< Per-frame buffer with current sampled wavelengths in each pixel for indirect illumination
 
     std::vector<Buffer::SharedPtr> mpSurfaceData;                    ///< Pointer to the buffer for surface data (current and prev frame).
 

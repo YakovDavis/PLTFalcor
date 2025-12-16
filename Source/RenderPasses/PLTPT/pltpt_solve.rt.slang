@@ -32,6 +32,7 @@
 #include "LightSampling.slangh"
 
 RWStructuredBuffer<hwss_t> gWavelengthsDI;  ///< Buffer with wavelengths for direct illumination.
+RWStructuredBuffer<hwss_t> gWavelengthsGI;  ///< Buffer with wavelengths for global illumination.
 
 /** Path measurement */
 
@@ -422,8 +423,8 @@ void NEE(inout PLTSolve solveData,
         if (reservoirGI.update(newRes, targetPDF, solveData.sg))
         {
             reservoirGI.sls = sls;
+            gWavelengthsGI[idx] = ls.beam.wavelengths;
         }
-        //gWavelengthsDI[idx] = ls.beam.wavelengths;
     }
 }
 
@@ -480,6 +481,10 @@ void main() {
     reservoirBuffer[reservoirIdx].M = 0; // Invalidate anything that may be here
 
     ReservoirGI reservoirGI = {};
+
+    // Generate new wavelengths in case no new sample will be found
+    gWavelengthsGI[reservoirIdx] = SpectrumSampler.hwssWavelengths(samplingWavelength);
+    gWavelengthsDI[reservoirIdx] = SpectrumSampler.hwssWavelengths(samplingWavelength);
 
     // Evaluate all bounces
     PLTSolve solveData = PLTSolve(sg, tilesg, samplingWavelength);

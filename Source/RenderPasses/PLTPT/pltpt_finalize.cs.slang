@@ -32,7 +32,8 @@
 #include "LightSampling.slangh"
 
 StructuredBuffer<BounceData> firstBounceBuffer;
-StructuredBuffer<hwss_t> gWavelengthsDI;
+RWStructuredBuffer<hwss_t> gWavelengthsDI;
+RWStructuredBuffer<hwss_t> gWavelengthsGI;
 
 /** Path measurement */
 
@@ -196,7 +197,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         const bool sampleTransmission = (lobes & (uint)LobeType::NonDeltaTransmission)!=0;
 
         LightSample ls = {};
-        generateLightSampleFromStored(reservoirGI.sls, sampleReflection, sampleTransmission, sdGI, sg, gWavelengthsDI[reservoirIdx], ls);
+        generateLightSampleFromStored(reservoirGI.sls, sampleReflection, sampleTransmission, sdGI, sg, gWavelengthsGI[reservoirIdx], ls);
         forwardUnwindGI(bounce, triangleHit, v, pixel, reservoirGI, ls.beam);
         finalColor += measure(bounce.pathContribution, ls.beam) * reservoirGI.W;
     }

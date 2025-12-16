@@ -52,7 +52,7 @@ struct SpatialReuseGIPass
     StructuredBuffer<PackedSurfaceData> gSurfaceData;     ///< Surface data for the current frame.
     RWStructuredBuffer<PackedReservoirGI> gOutGIReservoirs; ///< Output buffer with packed reservoirs.
     StructuredBuffer<BounceData> firstBounceBuffer;
-    StructuredBuffer<hwss_t> gWavelengthsDI;
+    StructuredBuffer<hwss_t> gWavelengthsGI;
 
     bool evalSampleVisibility(float3 pos, float3 samplePoint)
     {
@@ -108,7 +108,7 @@ struct SpatialReuseGIPass
             const TriangleHit triangleHit = TriangleHit(currentReservoir.bounces[0].hit);
             const VertexData v1 = gScene.getVertexData(triangleHit);
             float3 dir = normalize(v1.posW - v.posW);
-            float currPdf = evalTargetPDF(sd, bsdf, currentReservoir.cachedIntensity, lobes, currentReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, dir);
+            float currPdf = evalTargetPDF(sd, bsdf, currentReservoir.cachedIntensity, lobes, currentReservoir.hwss_comps, gWavelengthsGI[bufferIndex], bounce.wi, dir);
             outputReservoir.update(currentReservoir, currPdf, sg);
         }
 
@@ -156,7 +156,7 @@ struct SpatialReuseGIPass
                 neighborSamplePoint = v1.posW;
                 neighborSampleNormal = v1.normalW;
                 float3 dir = normalize(v1.posW - v.posW);
-                neighborReservoirTargetPDF = evalTargetPDF(sd, bsdf, neighborReservoir.cachedIntensity, lobes, neighborReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, dir);
+                neighborReservoirTargetPDF = evalTargetPDF(sd, bsdf, neighborReservoir.cachedIntensity, lobes, neighborReservoir.hwss_comps, gWavelengthsGI[bufferIndex], bounce.wi, dir);
             }
 
             if (any(neighborSampleNormal != 0.f)) // otherwise only direct illumination, jacobian = 1

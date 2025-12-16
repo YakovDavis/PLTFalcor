@@ -48,7 +48,7 @@ struct TemporalReuseGIPass
     RWStructuredBuffer<PackedReservoirGI> gPrevGIReservoirs;  ///< Buffer with reservoirs from the previous frame.
     StructuredBuffer<PackedReservoirGI> gGIReservoirs; ///< Buffer with reservoirs.
     StructuredBuffer<BounceData> firstBounceBuffer;
-    StructuredBuffer<hwss_t> gWavelengthsDI;
+    StructuredBuffer<hwss_t> gWavelengthsGI;
 
     void execute(const uint2 pixel)
     {
@@ -138,7 +138,7 @@ struct TemporalReuseGIPass
             const TriangleHit triangleHit = TriangleHit(prevReservoir.bounces[0].hit);
             const VertexData v1 = gScene.getVertexData(triangleHit);
             float3 dir = normalize(v1.posW - v.posW);
-            float prevPdf = evalTargetPDF(sd, bsdf, prevReservoir.cachedIntensity, lobes, prevReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, dir);
+            float prevPdf = evalTargetPDF(sd, bsdf, prevReservoir.cachedIntensity, lobes, prevReservoir.hwss_comps, gWavelengthsGI[bufferIndex], bounce.wi, dir);
             outputReservoir.update(prevReservoir, prevPdf, sg);
         }
 
@@ -147,7 +147,7 @@ struct TemporalReuseGIPass
             const TriangleHit triangleHit = TriangleHit(currentReservoir.bounces[0].hit);
             const VertexData v1 = gScene.getVertexData(triangleHit);
             float3 dir = normalize(v1.posW - v.posW);
-            float currPdf = evalTargetPDF(sd, bsdf, currentReservoir.cachedIntensity, lobes, currentReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, dir);
+            float currPdf = evalTargetPDF(sd, bsdf, currentReservoir.cachedIntensity, lobes, currentReservoir.hwss_comps, gWavelengthsGI[bufferIndex], bounce.wi, dir);
             outputReservoir.update(currentReservoir, currPdf, sg);
         }
 
