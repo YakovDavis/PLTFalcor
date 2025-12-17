@@ -87,11 +87,6 @@ struct TemporalReuseGIPass
             break;
         }
 
-        if (!neighborFound) {
-            gPrevGIReservoirs[bufferIndex] = currentReservoir.pack();
-            return;
-        }
-
         // Retrieve bounce for bsdf eval
         const BounceData bounce = firstBounceBuffer[bufferIndex];
 
@@ -107,7 +102,15 @@ struct TemporalReuseGIPass
         const uint lobes = bsdf.getLobes(sd);
 
         // Get index for the structured buffer access for the previous pixel.
-        uint prevBufferIndex = prevPixel.y * gFrameDim.x + prevPixel.x;
+        // Use reprojPos directly if neighbor validation failed, otherwise use the validated prevPixel
+        uint2 reusePixel = neighborFound ? prevPixel : reprojPos;
+        uint prevBufferIndex = reusePixel.y * gFrameDim.x + reusePixel.x;
+
+        // Clamp to valid bounds
+        if (any(reusePixel >= gFrameDim) || any(reusePixel < 0)) {
+            gPrevGIReservoirs[bufferIndex] = currentReservoir.pack();
+            return;
+        }
 
         ReservoirGI outputReservoir;
         // Get final reservoir from the previous frame.

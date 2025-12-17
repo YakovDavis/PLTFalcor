@@ -11,7 +11,7 @@ import Utils.Math.BitTricks;
 
 // Thresholds for determining valid neighboring pixels in terms of normal and depth similarity.
 static const float kNormalThreshold = 0.9f;
-static const float kDepthThreshold = 0.1f;
+static const float kDepthThreshold = 0.3f;
 
 /** Check if a neighboring pixel is valid based on the similarity of their normal vectors and depth values.
  */
