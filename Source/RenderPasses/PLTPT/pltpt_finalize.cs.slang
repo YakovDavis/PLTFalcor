@@ -32,8 +32,8 @@
 #include "LightSampling.slangh"
 
 StructuredBuffer<BounceData> firstBounceBuffer;
-RWStructuredBuffer<hwss_t> gWavelengthsDI;
-RWStructuredBuffer<hwss_t> gWavelengthsGI;
+StructuredBuffer<hwss_t> gWavelengthsDI;
+StructuredBuffer<hwss_t> gWavelengthsGI;
 
 /** Path measurement */
 
@@ -113,14 +113,15 @@ void forwardUnwindStep(const TriangleHit triangleHit,
 }
 
 // Replay path and evaluate contributions
-void forwardUnwindDI(const BounceData bounce, const TriangleHit triangleHit, const VertexData v, const uint2 pixel, inout PLTBeam beam)
+void forwardUnwindDI(const BounceData bounce, const TriangleHit triangleHit, const VertexData v, const uint2 pixel, inout PLTBeam beam, out float newCachedIntensity)
 {
+    newCachedIntensity = beam.getAverageIntensity();
     const float3 wo = bounce.wi;
     forwardUnwindStep(triangleHit, v, wo, bounce.sampledBsdfLobe, beam);
 }
 
 // Replay path and evaluate contributions GI
-void forwardUnwindGI(const BounceData bounce, const TriangleHit triangleHit, const VertexData v, const uint2 pixel, const ReservoirGI resGI, inout PLTBeam beam)
+void forwardUnwindGI(const BounceData bounce, const TriangleHit triangleHit, const VertexData v, const uint2 pixel, const ReservoirGI resGI, inout PLTBeam beam, out float newCachedIntensity)
 {
     // First we replay reservoir bounces
     for (int p=resGI.bounceCount; p>=1; --p) {
@@ -133,6 +134,7 @@ void forwardUnwindGI(const BounceData bounce, const TriangleHit triangleHit, con
 
         forwardUnwindStep(triangleHit1, v1, wo1, bounce1.sampledBsdfLobe, beam);
     }
+    newCachedIntensity = beam.getAverageIntensity();
     // Then we replay last bounce
     const float3 wo = bounce.wi;
     forwardUnwindStep(triangleHit, v, wo, bounce.sampledBsdfLobe, beam);
@@ -162,7 +164,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 
     // DI
     {
-        const Reservoir reservoir = Reservoir::unpack(reservoirBuffer[reservoirIdx]);
+        Reservoir reservoir = Reservoir::unpack(reservoirBuffer[reservoirIdx]);
         if (reservoir.M > 0) // check valid reservoir
         {
             const uint lobes = bsdf.getLobes(sd);
@@ -172,13 +174,14 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 
             LightSample ls = {};
             generateLightSampleFromStored(reservoir.sls, sampleReflection, sampleTransmission, sd, sg, gWavelengthsDI[reservoirIdx], ls);
-            forwardUnwindDI(bounce, triangleHit, v, pixel, ls.beam);
+            forwardUnwindDI(bounce, triangleHit, v, pixel, ls.beam, reservoir.cachedIntensity);
             finalColor += measure(bounce.pathContribution, ls.beam) * reservoir.W;
+            reservoirBuffer[reservoirIdx] = reservoir.pack(); // save updated cachedIntensity
         }
     }
 
     // GI
-    const ReservoirGI reservoirGI = ReservoirGI::unpack(reservoirGIBuffer[reservoirIdx]);
+    ReservoirGI reservoirGI = ReservoirGI::unpack(reservoirGIBuffer[reservoirIdx]);
     if (reservoirGI.M > 0) // check valid reservoir
     {
         const BounceData bounceGI = reservoirGI.bounces[reservoirGI.bounceCount - 1];
@@ -198,8 +201,9 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 
         LightSample ls = {};
         generateLightSampleFromStored(reservoirGI.sls, sampleReflection, sampleTransmission, sdGI, sg, gWavelengthsGI[reservoirIdx], ls);
-        forwardUnwindGI(bounce, triangleHit, v, pixel, reservoirGI, ls.beam);
+        forwardUnwindGI(bounce, triangleHit, v, pixel, reservoirGI, ls.beam, reservoirGI.cachedIntensity);
         finalColor += measure(bounce.pathContribution, ls.beam) * reservoirGI.W;
+        reservoirGIBuffer[reservoirIdx] = reservoirGI.pack(); // save updated cachedIntensity
     }
     gOutputColor[pixel] = float4(finalColor, 1.f);
 }

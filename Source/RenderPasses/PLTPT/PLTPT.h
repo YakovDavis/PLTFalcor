@@ -121,7 +121,7 @@ private:
     bool                        mDoSpatialReuse = true;
 
     bool                        mDoTemporalReuseGI = true;
-    bool                        mDoSpatialReuseGI = false;
+    bool                        mDoSpatialReuseGI = true;
 
     bool                        mDoNEE = true;
     bool                        mDoMIS = true;

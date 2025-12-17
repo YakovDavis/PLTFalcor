@@ -199,3 +199,8 @@ float evalTargetPDF(const ShadingData sd, const IMaterialInstance bsdf, const fl
     return intensitySum / hwss_comps;
 }
 
+float3 getViewRay(uint2 pixel, uint2 frameDim)
+{
+    return -normalize(gScene.camera.computeNonNormalizedRayDirPinhole(pixel, frameDim));
+}
+
