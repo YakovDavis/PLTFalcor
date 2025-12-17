@@ -63,8 +63,17 @@ struct TemporalReusePass
         // Get reservoir with initial candidate samples from the previous pass.
         Reservoir currentReservoir = Reservoir::unpack(gReservoirs[bufferIndex]);
 
-        // Reproject the pixel position.
-        uint2 reprojPos = uint2(float2(pixel) + gMotionVectors[pixel] * gFrameDim + sampleNext2D(sg));
+        // Reproject the pixel position
+        float2 motionVec = gMotionVectors[pixel] * gFrameDim;
+        float2 reprojPosFloat = float2(pixel) + motionVec;
+
+        int2 reprojPosInt = int2(round(reprojPosFloat));
+
+        if (any(reprojPosInt < int2(1)) || any(reprojPosInt >= int2(gFrameDim))) {
+            gPrevReservoirs[bufferIndex] = currentReservoir.pack();
+            return;
+        }
+        uint2 reprojPos = uint2(reprojPosInt);
 
         // Get surface data for the current pixel.
         SurfaceData surfaceData = SurfaceData::unpack(gSurfaceData[bufferIndex]);
@@ -84,11 +93,11 @@ struct TemporalReusePass
                 offset.x = int((sampleNext1D(sg) - 0.5) * kMaxOffset);
                 offset.y = int((sampleNext1D(sg) - 0.5) * kMaxOffset);
             }
-            prevPixel = reprojPos + offset;
-
-            // Test if previous pixel position is out of bounds.
-            if (any(prevPixel >= gFrameDim) || any(prevPixel < 1)) // 1 and not 0 because 0 causes artifacts
+            // Compute as int2 first to handle negative offsets correctly, then clamp
+            int2 prevPixelInt = int2(reprojPos) + offset;
+            if (any(prevPixelInt < int2(1)) || any(prevPixelInt >= int2(gFrameDim))) // 1 and not 0 because 0 causes artifacts
                 continue;
+            prevPixel = uint2(prevPixelInt);
 
             // Load shading data for the previous pixel.
             prevSurfaceData = SurfaceData::unpack(gPrevSurfaceData[getBufferIndex(prevPixel, gFrameDim)]);
