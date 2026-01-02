@@ -19,7 +19,8 @@ struct PackedReservoirGI
 
     // 8x4B
     StoredLightSample sls;
-    uint hwss_comps;
+    uint16_t hwss_comps;
+    float16_t heroWavelength;
 
     // 2x40B
     BounceData bounces[2];
@@ -34,6 +35,7 @@ struct ReservoirGI {
 
     uint hwss_comps;
     float cachedIntensity; ///< Average intensity between wavelength of the initial beam
+    float heroWavelength;
 
     StoredLightSample sls;
 
@@ -49,6 +51,8 @@ struct ReservoirGI {
         this.hwss_comps = 0;
 
         this.cachedIntensity = 0;
+
+        this.heroWavelength = 0;
 
         this.bounces[0] = {};
         this.bounces[1] = {};
@@ -86,6 +90,7 @@ struct ReservoirGI {
             this.hwss_comps = reservoir.hwss_comps;
 
             this.cachedIntensity = reservoir.cachedIntensity;
+            this.heroWavelength = reservoir.heroWavelength;
 
             this.bounces[0] = reservoir.bounces[0];
             this.bounces[1] = reservoir.bounces[1];
@@ -113,6 +118,7 @@ struct ReservoirGI {
         reservoir.bounceCount = packedReservoir.bounceCount;
         reservoir.hwss_comps = packedReservoir.hwss_comps;
         reservoir.cachedIntensity = packedReservoir.cachedIntensity;
+        reservoir.heroWavelength = packedReservoir.heroWavelength;
 
         reservoir.bounces[0] = packedReservoir.bounces[0];
         reservoir.bounces[1] = packedReservoir.bounces[1];
@@ -129,6 +135,7 @@ struct ReservoirGI {
         packedReservoir.bounceCount = this.bounceCount;
         packedReservoir.hwss_comps = this.hwss_comps;
         packedReservoir.cachedIntensity = this.cachedIntensity;
+        packedReservoir.heroWavelength = this.heroWavelength;
 
         packedReservoir.bounces[0] = this.bounces[0];
         packedReservoir.bounces[1] = this.bounces[1];

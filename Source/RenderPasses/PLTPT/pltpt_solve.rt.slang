@@ -390,6 +390,7 @@ void NEE(inout PLTSolve solveData,
         outputRes.sls = sls;
         outputRes.hwss_comps = ls.beam.hwss_comps;
         outputRes.cachedIntensity = ls.beam.getAverageIntensity();
+        outputRes.heroWavelength = ls.beam.wavelengths[0];
         reservoirBuffer[idx] = outputRes.pack();
         gWavelengthsDI[idx] = ls.beam.wavelengths;
     }
@@ -412,6 +413,7 @@ void NEE(inout PLTSolve solveData,
         newRes.sls = sls;
         newRes.hwss_comps = ls.beam.hwss_comps;
         newRes.cachedIntensity = ls.beam.getAverageIntensity();
+        newRes.heroWavelength = ls.beam.wavelengths[0];
         newRes.bounceCount = bounceIdx;
         newRes.bounces[0] = readBounce(1, pixel);
         if (bounceIdx > 1)
@@ -484,6 +486,7 @@ void onMiss(inout PLTSolve solveData,
             outputRes.sls = sls;
             outputRes.hwss_comps = beam.hwss_comps;
             outputRes.cachedIntensity = beam.getAverageIntensity();
+            outputRes.heroWavelength = beam.wavelengths[0];
             reservoirBuffer[idx] = outputRes.pack();
             gWavelengthsDI[idx] = beam.wavelengths;
         }
@@ -506,6 +509,7 @@ void onMiss(inout PLTSolve solveData,
             newRes.sls = sls;
             newRes.hwss_comps = beam.hwss_comps;
             newRes.cachedIntensity = beam.getAverageIntensity();
+            newRes.heroWavelength = beam.wavelengths[0];
             newRes.bounceCount = bounceIdx;
             newRes.bounces[0] = readBounce(1, pixel);
             if (bounceIdx > 1)

@@ -17,7 +17,7 @@ struct PackedReservoir
 
     // 8x4B
     StoredLightSample sls;
-    uint pad_ = 0;
+    float heroWavelength;
 
     // 2x4B
     uint hwss_comps;
@@ -30,6 +30,7 @@ struct Reservoir {
     uint M; ///< The number of samples seen so far.
     uint hwss_comps;
     float cachedIntensity; ///< Average intensity between wavelength of the initial beam
+    float heroWavelength;
 
     StoredLightSample sls;
 
@@ -39,7 +40,8 @@ struct Reservoir {
         this.W = 0;
         this.M = 0;
         this.hwss_comps = 0;
-        cachedIntensity = 0;
+        this.cachedIntensity = 0;
+        this.heroWavelength = 0;
 
         this.sls = {};
     }
@@ -74,6 +76,7 @@ struct Reservoir {
             this.sls = reservoir.sls;
             this.hwss_comps = reservoir.hwss_comps;
             this.cachedIntensity = reservoir.cachedIntensity;
+            this.heroWavelength = reservoir.heroWavelength;
         }
 
         return isSelected;
@@ -95,6 +98,7 @@ struct Reservoir {
 
         reservoir.hwss_comps = packedReservoir.hwss_comps;
         reservoir.cachedIntensity = packedReservoir.cachedIntensity;
+        reservoir.heroWavelength = packedReservoir.heroWavelength;
 
         reservoir.sls = packedReservoir.sls;
 
@@ -108,6 +112,7 @@ struct Reservoir {
         packedReservoir.M = this.M;
         packedReservoir.hwss_comps = this.hwss_comps;
         packedReservoir.cachedIntensity = this.cachedIntensity;
+        packedReservoir.heroWavelength = this.heroWavelength;
 
         packedReservoir.sls = this.sls;
 

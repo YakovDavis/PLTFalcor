@@ -171,7 +171,12 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
             const bool sampleTransmission = (lobes & (uint)LobeType::NonDeltaTransmission)!=0;
 
             LightSample ls = {};
-            generateLightSampleFromStored(reservoir.sls, sampleReflection, sampleTransmission, sd, sg, gWavelengthsDI[reservoirIdx], ls);
+            if (reservoir.hwss_comps > 1) {
+                generateLightSampleFromStored(reservoir.sls, sampleReflection, sampleTransmission, sd, sg, gWavelengthsDI[reservoirIdx], ls);
+            }
+            else {
+                generateLightSampleFromStored(reservoir.sls, sampleReflection, sampleTransmission, sd, sg, hwss_t(reservoir.heroWavelength, gWavelengthsDI[reservoirIdx].yzw), ls);
+            }
             forwardUnwindDI(bounce, triangleHit, v, pixel, ls.beam);
             finalColor += measure(bounce.pathContribution, ls.beam) * reservoir.W;
         }
@@ -197,7 +202,12 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         const bool sampleTransmission = (lobes & (uint)LobeType::NonDeltaTransmission)!=0;
 
         LightSample ls = {};
-        generateLightSampleFromStored(reservoirGI.sls, sampleReflection, sampleTransmission, sdGI, sg, gWavelengthsGI[reservoirIdx], ls);
+        if (reservoirGI.hwss_comps > 1) {
+            generateLightSampleFromStored(reservoirGI.sls, sampleReflection, sampleTransmission, sdGI, sg, gWavelengthsGI[reservoirIdx], ls);
+        }
+        else {
+            generateLightSampleFromStored(reservoirGI.sls, sampleReflection, sampleTransmission, sdGI, sg, hwss_t(reservoirGI.heroWavelength, gWavelengthsGI[reservoirIdx].yzw), ls);
+        }
         forwardUnwindGI(bounce, triangleHit, v, pixel, reservoirGI, ls.beam);
         finalColor += measure(bounce.pathContribution, ls.beam) * reservoirGI.W;
     }
