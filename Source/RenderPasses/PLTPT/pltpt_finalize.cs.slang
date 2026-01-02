@@ -113,15 +113,14 @@ void forwardUnwindStep(const TriangleHit triangleHit,
 }
 
 // Replay path and evaluate contributions
-void forwardUnwindDI(const BounceData bounce, const TriangleHit triangleHit, const VertexData v, const uint2 pixel, inout PLTBeam beam, out float newCachedIntensity)
+void forwardUnwindDI(const BounceData bounce, const TriangleHit triangleHit, const VertexData v, const uint2 pixel, inout PLTBeam beam)
 {
-    newCachedIntensity = beam.getAverageIntensity();
     const float3 wo = bounce.wi;
     forwardUnwindStep(triangleHit, v, wo, bounce.sampledBsdfLobe, beam);
 }
 
 // Replay path and evaluate contributions GI
-void forwardUnwindGI(const BounceData bounce, const TriangleHit triangleHit, const VertexData v, const uint2 pixel, const ReservoirGI resGI, inout PLTBeam beam, out float newCachedIntensity)
+void forwardUnwindGI(const BounceData bounce, const TriangleHit triangleHit, const VertexData v, const uint2 pixel, const ReservoirGI resGI, inout PLTBeam beam)
 {
     // First we replay reservoir bounces
     for (int p=resGI.bounceCount; p>=1; --p) {
@@ -134,7 +133,6 @@ void forwardUnwindGI(const BounceData bounce, const TriangleHit triangleHit, con
 
         forwardUnwindStep(triangleHit1, v1, wo1, bounce1.sampledBsdfLobe, beam);
     }
-    newCachedIntensity = beam.getAverageIntensity();
     // Then we replay last bounce
     const float3 wo = bounce.wi;
     forwardUnwindStep(triangleHit, v, wo, bounce.sampledBsdfLobe, beam);
@@ -174,9 +172,8 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 
             LightSample ls = {};
             generateLightSampleFromStored(reservoir.sls, sampleReflection, sampleTransmission, sd, sg, gWavelengthsDI[reservoirIdx], ls);
-            forwardUnwindDI(bounce, triangleHit, v, pixel, ls.beam, reservoir.cachedIntensity);
+            forwardUnwindDI(bounce, triangleHit, v, pixel, ls.beam);
             finalColor += measure(bounce.pathContribution, ls.beam) * reservoir.W;
-            reservoirBuffer[reservoirIdx] = reservoir.pack(); // save updated cachedIntensity
         }
     }
 
@@ -201,9 +198,8 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 
         LightSample ls = {};
         generateLightSampleFromStored(reservoirGI.sls, sampleReflection, sampleTransmission, sdGI, sg, gWavelengthsGI[reservoirIdx], ls);
-        forwardUnwindGI(bounce, triangleHit, v, pixel, reservoirGI, ls.beam, reservoirGI.cachedIntensity);
+        forwardUnwindGI(bounce, triangleHit, v, pixel, reservoirGI, ls.beam);
         finalColor += measure(bounce.pathContribution, ls.beam) * reservoirGI.W;
-        reservoirGIBuffer[reservoirIdx] = reservoirGI.pack(); // save updated cachedIntensity
     }
     gOutputColor[pixel] = float4(finalColor, 1.f);
 }
