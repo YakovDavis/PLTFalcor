@@ -124,7 +124,7 @@ struct TemporalReusePass
 
         let bsdf = gScene.materials.getMaterialInstance(sd, lod);
 
-        const uint lobes = bsdf.getLobes(sd);
+        const uint lobes = bounce.sampledBsdfLobe;
 
         // Get index for the structured buffer access for the previous pixel.
         // Use reprojPos directly if neighbor validation failed, otherwise use the validated prevPixel
@@ -145,17 +145,20 @@ struct TemporalReusePass
         // Clamp the previous frame's M.
         prevReservoir.M = min(prevReservoir.M, kMCap);
 
+        float3 lightPos = prevReservoir.sls.distant > 0 ? surfaceData.position + prevReservoir.sls.posW : prevReservoir.sls.posW;
+
         // Standard combination of multiple reservoirs (Algorithm 4 from the original paper):
         if (prevReservoir.M > 0)
         {
-            float3 dir = normalize(prevReservoir.sls.posW - v.posW);
+            float3 dir = normalize(lightPos - surfaceData.position);
             float prevPdf = evalTargetPDF(sd, bsdf, prevReservoir.cachedIntensity, lobes, prevReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, dir);
             outputReservoir.update(prevReservoir, prevPdf, sg);
         }
 
         if (currentReservoir.M > 0)
         {
-            float3 dir = normalize(currentReservoir.sls.posW - v.posW);
+            float3 currLightPos = currentReservoir.sls.distant > 0 ? surfaceData.position + currentReservoir.sls.posW : currentReservoir.sls.posW;
+            float3 dir = normalize(currLightPos - surfaceData.position);
             float currPdf = evalTargetPDF(sd, bsdf, currentReservoir.cachedIntensity, lobes, currentReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, dir);
             outputReservoir.update(currentReservoir, currPdf, sg);
         }

@@ -64,10 +64,6 @@ struct SpatialReuseGIPass
         // Create output reservoir.
         ReservoirGI outputReservoir;
 
-        const float3 primaryRayOrigin = gScene.camera.getPosition();
-        const float3 primaryRayDir = getPrimaryRayDir(pixel, gFrameDim, gScene.camera);
-        const float3 viewVec = -normalize(primaryRayDir);
-
         // Get pixel Data for the current pixel.
         SurfaceData surfaceData = SurfaceData::unpack(gSurfaceData[bufferIndex]);
         if (!surfaceData.isValid())
@@ -85,7 +81,7 @@ struct SpatialReuseGIPass
 
         let bsdf = gScene.materials.getMaterialInstance(sd, lod);
 
-        const uint lobes = bsdf.getLobes(sd);
+        const uint lobes = bounce.sampledBsdfLobe;
 
         if (currentReservoir.M > 0)
         {

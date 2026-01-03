@@ -372,6 +372,10 @@ void NEE(inout PLTSolve solveData,
     // Finally, evaluate NEE contributions
     evalNEE(solveData, bounceIdx, bounce, pixel, V, sd.materialID, bsdf, ls.beam, evalCurrentVertex, reservoirGI);
 
+    BounceData firstBounce = readBounce(0, pixel);;
+    if (firstBounce.flags.dispersiveDeltaSegment)
+        ls.beam.collapseToHeroWavelengthOnly();
+
     if (bounceIdx == 0) // DI
     {
         const uint idx = pixel.x + pixel.y * kOutputSize.x;
@@ -380,7 +384,13 @@ void NEE(inout PLTSolve solveData,
         sls.lightType = ls.lightType;
         sls.uvOrEnvSample = float2(asfloat(ls.extraData.x), asfloat(ls.extraData.y));
         sls.triangleOrLightIndex = ls.extraData.z;
-        sls.posW = ls.origin + ls.dir * ls.distance;
+        sls.distant = ls.beam.distant ? 1 : 0;
+        if (sls.distant > 0) {
+            sls.posW = ls.dir * ls.distance;
+        }
+        else {
+            sls.posW = ls.origin + ls.dir * ls.distance;
+        }
         Reservoir outputRes = {};
         const float targetPDF = evalTargetPDF(sd, bsdf, ls.beam.getAverageIntensity(), lobes, ls.beam.hwss_comps, ls.beam.wavelengths, bounce.wi, ls.beam.r);
         //outputRes.update(sls, targetPDF, sls.pdf, solveData.sg);
@@ -402,7 +412,13 @@ void NEE(inout PLTSolve solveData,
         sls.lightType = ls.lightType;
         sls.uvOrEnvSample = float2(asfloat(ls.extraData.x), asfloat(ls.extraData.y));
         sls.triangleOrLightIndex = ls.extraData.z;
-        sls.posW = ls.origin + ls.dir * ls.distance;
+        sls.distant = ls.beam.distant ? 1 : 0;
+        if (sls.distant > 0) {
+            sls.posW = ls.dir * ls.distance;
+        }
+        else {
+            sls.posW = ls.origin + ls.dir * ls.distance;
+        }
         ReservoirGI newRes = {};
         const float targetPDF = ls.beam.getAverageIntensity();
         //newRes.update(sls, targetPDF, sls.pdf, solveData.sg);
@@ -476,7 +492,8 @@ void onMiss(inout PLTSolve solveData,
             sls.lightType = (uint)SampledLightType::EnvMap;
             sls.uvOrEnvSample = envMapUV;
             sls.triangleOrLightIndex = 0;
-            sls.posW = v.posW + (-wo) * kRayTMax;
+            sls.distant = 1;
+            sls.posW = (-wo) * kRayTMax;
             Reservoir outputRes = {};
             const float targetPDF = evalTargetPDF(sd, bsdf, beam.getAverageIntensity(), lobes, beam.hwss_comps, beam.wavelengths, bounce.wi, beam.r);
             //outputRes.update(sls, targetPDF, sls.pdf, solveData.sg);
@@ -498,7 +515,8 @@ void onMiss(inout PLTSolve solveData,
             sls.lightType = (uint)SampledLightType::EnvMap;
             sls.uvOrEnvSample = envMapUV;
             sls.triangleOrLightIndex = 0;
-            sls.posW = v.posW + (-wo) * kRayTMax;
+            sls.distant = 1;
+            sls.posW = (-wo) * kRayTMax;
             ReservoirGI newRes = {};
             const float targetPDF = beam.getAverageIntensity();
             //newRes.update(sls, targetPDF, sls.pdf, solveData.sg);

@@ -108,7 +108,7 @@ struct TemporalReuseGIPass
 
         let bsdf = gScene.materials.getMaterialInstance(sd, lod);
 
-        const uint lobes = bsdf.getLobes(sd);
+        const uint lobes = bounce.sampledBsdfLobe;
 
         // Get index for the structured buffer access for the previous pixel.
         // Use reprojPos directly if neighbor validation failed, otherwise use the validated prevPixel

@@ -158,27 +158,29 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     const uint materialID = gScene.getMaterialID(triangleHit.instanceID);
     const ShadingData sd = gScene.materials.prepareShadingData(v, materialID, bounce.wi, lod);
 
-    let bsdf = gScene.materials.getMaterialInstance(sd, lod);
-
     // DI
     {
         Reservoir reservoir = Reservoir::unpack(reservoirBuffer[reservoirIdx]);
         if (reservoir.M > 0) // check valid reservoir
         {
-            const uint lobes = bsdf.getLobes(sd);
+            const uint lobes = bounce.sampledBsdfLobe;
 
             const bool sampleReflection = (lobes & (uint)LobeType::NonDeltaReflection)!=0;
             const bool sampleTransmission = (lobes & (uint)LobeType::NonDeltaTransmission)!=0;
 
             LightSample ls = {};
+            bool validSample = false;
             if (reservoir.hwss_comps > 1) {
-                generateLightSampleFromStored(reservoir.sls, sampleReflection, sampleTransmission, sd, sg, gWavelengthsDI[reservoirIdx], ls);
+                validSample = generateLightSampleFromStored(reservoir.sls, sampleReflection, sampleTransmission, sd, sg, gWavelengthsDI[reservoirIdx], ls);
             }
             else {
-                generateLightSampleFromStored(reservoir.sls, sampleReflection, sampleTransmission, sd, sg, hwss_t(reservoir.heroWavelength, gWavelengthsDI[reservoirIdx].yzw), ls);
+                validSample = generateLightSampleFromStored(reservoir.sls, sampleReflection, sampleTransmission, sd, sg, hwss_t(reservoir.heroWavelength, gWavelengthsDI[reservoirIdx].yzw), ls);
             }
-            forwardUnwindDI(bounce, triangleHit, v, pixel, ls.beam);
-            finalColor += measure(bounce.pathContribution, ls.beam) * reservoir.W;
+            ls.beam.hwss_comps = reservoir.hwss_comps;
+            if (validSample) {
+                forwardUnwindDI(bounce, triangleHit, v, pixel, ls.beam);
+                finalColor += measure(bounce.pathContribution, ls.beam) * reservoir.W;
+            }
         }
     }
 
@@ -192,24 +194,26 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         const VertexData vGI = gScene.getVertexData(triangleHitGI);
 
         const uint materialIDGI = gScene.getMaterialID(triangleHitGI.instanceID);
-        const ShadingData sdGI = gScene.materials.prepareShadingData(vGI, materialIDGI, bounceGI.wi, lod);
+        const ShadingData sdGI = gScene.materials.prepareShadingData(vGI, materialIDGI, -bounceGI.wi, lod);
 
-        let bsdfGI = gScene.materials.getMaterialInstance(sdGI, lod);
-
-        const uint lobes = bsdfGI.getLobes(sdGI);
+        const uint lobes = bounceGI.sampledBsdfLobe;
 
         const bool sampleReflection = (lobes & (uint)LobeType::NonDeltaReflection)!=0;
         const bool sampleTransmission = (lobes & (uint)LobeType::NonDeltaTransmission)!=0;
 
         LightSample ls = {};
+        bool validSample = false;
         if (reservoirGI.hwss_comps > 1) {
-            generateLightSampleFromStored(reservoirGI.sls, sampleReflection, sampleTransmission, sdGI, sg, gWavelengthsGI[reservoirIdx], ls);
+            validSample = generateLightSampleFromStored(reservoirGI.sls, sampleReflection, sampleTransmission, sdGI, sg, gWavelengthsGI[reservoirIdx], ls);
         }
         else {
-            generateLightSampleFromStored(reservoirGI.sls, sampleReflection, sampleTransmission, sdGI, sg, hwss_t(reservoirGI.heroWavelength, gWavelengthsGI[reservoirIdx].yzw), ls);
+            validSample = generateLightSampleFromStored(reservoirGI.sls, sampleReflection, sampleTransmission, sdGI, sg, hwss_t(reservoirGI.heroWavelength, gWavelengthsGI[reservoirIdx].yzw), ls);
         }
-        forwardUnwindGI(bounce, triangleHit, v, pixel, reservoirGI, ls.beam);
-        finalColor += measure(bounce.pathContribution, ls.beam) * reservoirGI.W;
+        ls.beam.hwss_comps = reservoirGI.hwss_comps;
+        if (validSample) {
+            forwardUnwindGI(bounce, triangleHit, v, pixel, reservoirGI, ls.beam);
+            finalColor += measure(bounceGI.pathContribution, ls.beam) * reservoirGI.W;
+        }
     }
     gOutputColor[pixel] = float4(finalColor, 1.f);
 }

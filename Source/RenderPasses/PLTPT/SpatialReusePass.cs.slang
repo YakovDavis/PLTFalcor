@@ -37,10 +37,12 @@ static const float kShadowRayEpsilon = 0.0001f;
 
 struct SpatialReusePass
 {
+    static const uint kMCap = 30;
     static const float FLT_LARGE = 1e20f;
     static const uint kNeighborCount = 5;
     static const float kDepthThreshold = 0.1f;
-    static const float kNormalThreshold = 0.2f;
+    static const float kNormalThreshold = 0.1f;
+    static const float kSearchRadius = 30.0f;
 
     uint2   gFrameDim; ///< Frame dimensions.
     uint    gFrameCount; ///< Frame count since scene was loaded.
@@ -75,12 +77,8 @@ struct SpatialReusePass
         // Get reservoir with initial candidate samples from the previous pass.
         Reservoir currentReservoir = Reservoir::unpack(gReservoirs[bufferIndex]);
 
-        // Create output reservoir.
-        Reservoir outputReservoir;
-
-        const float3 primaryRayOrigin = gScene.camera.getPosition();
-        const float3 primaryRayDir = getPrimaryRayDir(pixel, gFrameDim, gScene.camera);
-        const float3 viewVec = -normalize(primaryRayDir);
+        Reservoir outputReservoir = {};
+        outputReservoir.hwss_comps = currentReservoir.hwss_comps;
 
         // Get pixel Data for the current pixel.
         SurfaceData surfaceData = SurfaceData::unpack(gSurfaceData[bufferIndex]);
@@ -99,24 +97,34 @@ struct SpatialReusePass
 
         let bsdf = gScene.materials.getMaterialInstance(sd, lod);
 
-        const uint lobes = bsdf.getLobes(sd);
+        const uint lobes = bounce.sampledBsdfLobe;
 
         if (currentReservoir.M > 0)
         {
-            float3 dir = normalize(currentReservoir.sls.posW - v.posW);
-            float currPdf = evalTargetPDF(sd, bsdf, currentReservoir.cachedIntensity, lobes, currentReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, dir);
-            outputReservoir.update(currentReservoir, currPdf, sg);
+            float3 lightPos = currentReservoir.sls.distant > 0 ? surfaceData.position + currentReservoir.sls.posW : currentReservoir.sls.posW;
+            float3 dir = lightPos - surfaceData.position;
+            float distSq = dot(dir, dir);
+            if (distSq > FLT_EPSILON && all(isfinite(dir)))
+            {
+                dir = normalize(dir);
+                float currPdf = evalTargetPDF(sd, bsdf, currentReservoir.cachedIntensity, lobes, currentReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, dir);
+                if (currPdf > 0.f && isfinite(currPdf))
+                {
+                    outputReservoir.update(currentReservoir, currPdf, sg);
+                }
+            }
         }
+
+        float3 rayOrigin = computeRayOrigin(surfaceData.position, surfaceData.normal);
 
         uint validNeighborFlags = 0;
 
-#if true
+#if 1
         SampleGenerator sg1 = sg;
-        float radius = 30.0f;
         [unroll]
         for (int i = 0; i < kNeighborCount; i++)
         {
-            uint2 neighborPixel = getRandomNeighborPixel(pixel, sg1, radius);
+            uint2 neighborPixel = getRandomNeighborPixel(pixel, sg1, kSearchRadius);
 
             // Discard pixel if out of bounds
 	        if(any(neighborPixel >= gFrameDim) || any(neighborPixel < 0))
@@ -136,28 +144,58 @@ struct SpatialReusePass
                 continue;
             }
 
+            if (neighborReservoir.hwss_comps != currentReservoir.hwss_comps) {
+                continue;
+            }
+
             if (!isValidNeighbor(surfaceData.normal, neighborSurfaceData.normal, surfaceData.depth, neighborSurfaceData.depth, kDepthThreshold, kNormalThreshold))
             {
                 continue;
             }
 
-            if (!evalSampleVisibility(v.posW, neighborReservoir.sls.posW))
+            float3 lightPos = neighborReservoir.sls.distant > 0 ? surfaceData.position + neighborReservoir.sls.posW : neighborReservoir.sls.posW;
+
+            if (!evalSampleVisibility(rayOrigin, lightPos))
             {
                 continue;
             }
 
             if (neighborReservoir.M > 0)
             {
-                float3 dir = normalize(neighborReservoir.sls.posW - v.posW);
+                float3 dir = lightPos - surfaceData.position;
+                float distSq = dot(dir, dir);
+                if (distSq < FLT_EPSILON || !all(isfinite(dir)))
+                {
+                    continue;
+                }
+                dir = normalize(dir);
+
+                // Check if direction is valid for the current surface (not pointing through backface unless transmission)
+                const bool isTransmission = (lobes & (uint)LobeType::NonDeltaTransmission) != 0;
+                const float cosTheta = dot(surfaceData.normal, dir);
+                if (!isTransmission && cosTheta <= 0.f)
+                {
+                    continue;
+                }
+
                 float neighborPdf = evalTargetPDF(sd, bsdf, neighborReservoir.cachedIntensity, lobes, neighborReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, dir);
-                outputReservoir.update(neighborReservoir, neighborPdf, sg);
+                if (neighborPdf > 0.f && isfinite(neighborPdf))
+                {
+                    outputReservoir.update(neighborReservoir, neighborPdf, sg);
+                }
             }
         }
-        outputReservoir.W = outputReservoir.W > 0.f ? (outputReservoir.weightSum / outputReservoir.M) / (outputReservoir.W) : 0.f;
+        if (outputReservoir.M > 0)
+        {
+            outputReservoir.W = outputReservoir.W > 0.f ? (outputReservoir.weightSum / outputReservoir.M) / (outputReservoir.W) : 0.f;
+            outputReservoir.M = min(outputReservoir.M, kMCap);
+            gOutReservoirs[bufferIndex] = outputReservoir.pack();
+        }
+        else
+        {
+            gOutReservoirs[bufferIndex] = currentReservoir.pack();
+        }
 #endif
-
-	    // Store reservoir
-        gOutReservoirs[bufferIndex] = outputReservoir.pack();
     }
 }
 
