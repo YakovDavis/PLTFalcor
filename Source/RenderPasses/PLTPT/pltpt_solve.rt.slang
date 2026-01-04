@@ -202,6 +202,65 @@ void evalEmissive(inout PLTSolve solveData,
                 beam.collapseToHeroWavelengthOnly();
 
             forwardUnwind(bounceIdx, pixel, beam, reservoirGI);
+
+            if (bounceIdx == 0) // DI
+            {
+                const uint idx = pixel.x + pixel.y * kOutputSize.x;
+                const uint lobes = bounce.sampledBsdfLobe;
+                StoredLightSample sls = {};
+                sls.pdf = lightPdf;
+                sls.lightType = (uint)SampledLightType::Emissive;
+                sls.uvOrEnvSample = triangleHit.barycentrics;
+                sls.triangleOrLightIndex = 0;
+                sls.distant = 0;
+                sls.posW = sd.posW;
+                Reservoir outputRes = {};
+                const float targetPDF = evalTargetPDF(sd, bsdf, beam.getAverageIntensity(), lobes, beam.hwss_comps, beam.wavelengths, bounce.wi, beam.r);
+                //outputRes.update(sls, targetPDF, sls.pdf, solveData.sg);
+                outputRes.weightSum = targetPDF / sls.pdf;
+                outputRes.M = 1;
+                outputRes.W = targetPDF;
+                outputRes.sls = sls;
+                outputRes.hwss_comps = beam.hwss_comps;
+                outputRes.cachedIntensity = beam.getAverageIntensity();
+                outputRes.heroWavelength = beam.wavelengths[0];
+                reservoirBuffer[idx] = outputRes.pack();
+                gWavelengthsDI[idx] = beam.wavelengths;
+            }
+            else if (bounceIdx <= 2) // GI
+            {
+                const uint idx = pixel.x + pixel.y * kOutputSize.x;
+                StoredLightSample sls = {};
+                sls.pdf = lightPdf;
+                sls.lightType = (uint)SampledLightType::Emissive;
+                sls.uvOrEnvSample = triangleHit.barycentrics;
+                sls.triangleOrLightIndex = 0;
+                sls.distant = 0;
+                sls.posW = sd.posW;
+                ReservoirGI newRes = {};
+                const float targetPDF = beam.getAverageIntensity();
+                //newRes.update(sls, targetPDF, sls.pdf, solveData.sg);
+                newRes.weightSum = targetPDF / sls.pdf;
+                newRes.M = 1;
+                const float bsdfPdf = bsdf.pdf(sd, bounce.wi, beam.wavelengths.x);
+                newRes.W = targetPDF * bsdfPdf;
+                newRes.sls = sls;
+                newRes.hwss_comps = beam.hwss_comps;
+                newRes.cachedIntensity = beam.getAverageIntensity();
+                newRes.heroWavelength = beam.wavelengths[0];
+                newRes.bounceCount = bounceIdx;
+                newRes.bounces[0] = readBounce(1, pixel);
+                if (bounceIdx > 1)
+                {
+                    newRes.bounces[1] = readBounce(2, pixel);
+                }
+                if (reservoirGI.update(newRes, targetPDF, solveData.sg))
+                {
+                    reservoirGI.sls = sls;
+                    gWavelengthsGI[idx] = beam.wavelengths;
+                }
+                reservoirGI.W = reservoirGI.W > 0.f ? (reservoirGI.weightSum / reservoirGI.M) / reservoirGI.W : 0.f;
+            }
         }
     }
 }
