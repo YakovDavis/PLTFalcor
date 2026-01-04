@@ -146,7 +146,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 
     SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
 
-    float3 finalColor = float3(0.f);
+    float3 finalColor = gOutputColor[pixel].rgb;
 
     const uint reservoirIdx = pixel.y * kOutputSize.x + pixel.x;
     const BounceData bounce = firstBounceBuffer[pixel.x + (pixel.y * kOutputSize.x)];

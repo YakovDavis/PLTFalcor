@@ -70,9 +70,9 @@ void forwardUnwindStep(const TriangleHit triangleHit,
 }
 
 // Replay path and evaluate contributions
-void forwardUnwind(const int bounceIdx, const uint2 pixel, inout PLTBeam beam, inout ReservoirGI reservoirGI)
+void forwardUnwind(const int bounceIdx, const int stopAtBounce, const uint2 pixel, inout PLTBeam beam, inout ReservoirGI reservoirGI)
 {
-    for (int p=bounceIdx-1; p>=1; --p) { // Everything but the last bounce
+    for (int p=bounceIdx-1; p>=stopAtBounce; --p) {
         const BounceData bounce = readBounce(p, pixel);
 
         const TriangleHit triangleHit = TriangleHit(bounce.hit);
@@ -201,7 +201,14 @@ void evalEmissive(inout PLTSolve solveData,
             if (!mHWSSDoMIS && bounce.flags.dispersiveDeltaSegment)
                 beam.collapseToHeroWavelengthOnly();
 
-            forwardUnwind(bounceIdx, pixel, beam, reservoirGI);
+            // Only measure paths that don't go into reservoirs
+            if (bounceIdx > 2) {
+                forwardUnwind(bounceIdx, 0, pixel, beam, reservoirGI);
+                measure(solveData, bounceIdx, bounce.pathContribution, beam);
+            }
+            else {
+                forwardUnwind(bounceIdx, 1, pixel, beam, reservoirGI);
+            }
 
             if (bounceIdx == 0) // DI
             {
@@ -304,8 +311,14 @@ void evalNEE(inout PLTSolve solveData,
         forwardHWSSMis(bsdf, forwardSd, bounce.wi, (uint)LobeType::NonDelta, beam);
     }
 
-    // Forward unwind beam
-    forwardUnwind(bounceIdx, pixel, beam, reservoirGI);
+    // Only measure paths that don't go into reservoirs
+    if (bounceIdx > 2) {
+        forwardUnwind(bounceIdx, 0, pixel, beam, reservoirGI);
+        measure(solveData, bounceIdx, bounce.pathContribution, beam);
+    }
+    else {
+        forwardUnwind(bounceIdx, 1, pixel, beam, reservoirGI);
+    }
 }
 
 void NEE(inout PLTSolve solveData,
@@ -529,8 +542,14 @@ void onMiss(inout PLTSolve solveData,
         if (!mHWSSDoMIS && bounce.flags.dispersiveDeltaSegment)
             beam.collapseToHeroWavelengthOnly();
 
-        // Forward unwind beam
-        forwardUnwind(bounceIdx, pixel, beam, reservoirGI);
+        // Only measure paths that don't go into reservoirs
+        if (bounceIdx > 2) {
+            forwardUnwind(bounceIdx, 0, pixel, beam, reservoirGI);
+            measure(solveData, bounceIdx, bounce.pathContribution, beam);
+        }
+        else {
+            forwardUnwind(bounceIdx, 1, pixel, beam, reservoirGI);
+        }
 
         const TriangleHit triangleHit = TriangleHit(bounce.hit);
         const VertexData v = gScene.getVertexData(triangleHit);
@@ -681,6 +700,7 @@ void main() {
 
     reservoirGIBuffer[reservoirIdx] = reservoirGI.pack();
 
+    gOutputColor[pixel] = float4(solveData.Lrgb, 1.f);
 
 #if DO_DEBUG_VIEW==1
     gOutputColor[pixel] = float4(lerp(gOutputColor[pixel].rgb,
