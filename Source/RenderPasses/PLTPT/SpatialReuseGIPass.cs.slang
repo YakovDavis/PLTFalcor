@@ -92,6 +92,7 @@ struct SpatialReuseGIPass
         float3 rayOrigin = computeRayOrigin(surfaceData.position, surfaceData.normal);
         SampleGenerator sg1 = sg;
 
+        uint Z = currentReservoir.M;
         float radius = 0.05f * gFrameDim.y;
         [unroll]
         for (int i = 0; i < kNeighborCount; i++)
@@ -175,14 +176,23 @@ struct SpatialReuseGIPass
                 neighborReservoirTargetPDF *= jacobian;
             }
 
-            bool neighborChosen = outputReservoir.update(neighborReservoir, neighborReservoirTargetPDF, sg);
+            Z += neighborReservoir.M;
+
+            outputReservoir.update(neighborReservoir, neighborReservoirTargetPDF, sg);
         }
 
-        outputReservoir.W = outputReservoir.W > 0.f ? (outputReservoir.weightSum / outputReservoir.M) / (outputReservoir.W) : 0.f;
-        outputReservoir.M = min(outputReservoir.M, kMCap);
-
-	    // Store reservoir
-        gOutGIReservoirs[bufferIndex] = outputReservoir.pack();
+        if (outputReservoir.M > 0)
+        {
+            //outputReservoir.W = outputReservoir.W > 0.f ? (outputReservoir.weightSum / outputReservoir.M) / (outputReservoir.W) : 0.f;
+            float m = Z > 0 ? 1.f / Z : 0.f;
+            outputReservoir.W = outputReservoir.W > 0.f ? (outputReservoir.weightSum * m) / (outputReservoir.W) : 0.f;
+            outputReservoir.M = min(outputReservoir.M, kMCap);
+            gOutGIReservoirs[bufferIndex] = outputReservoir.pack();
+        }
+        else
+        {
+            gOutGIReservoirs[bufferIndex] = currentReservoir.pack();
+        }
     }
 }
 
