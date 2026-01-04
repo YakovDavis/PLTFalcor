@@ -15,20 +15,25 @@ import Scene.Intersection;
 import Scene.ShadingData;
 import Scene.Scene;
 
-float evalTargetPDF(const ShadingData sd, const IMaterialInstance bsdf, const float cachedIntensity, const uint lobe, const uint hwss_comps, hwss_t wavelengths, const float3 wi, const float3 wo)
+float evalTargetPDF(const ShadingData sd, const IMaterialInstance bsdf, const Reservoir reservoir, const uint lobe, hwss_t wavelengths, const float3 wi, const float3 wo)
 {
     PLTBeam testBeam = {};
-    testBeam.wavelengths = wavelengths;
+    testBeam.hwss_comps = reservoir.hwss_comps;
+    if (testBeam.hwss_comps > 1) {
+        testBeam.wavelengths = wavelengths;
+    }
+    else {
+        testBeam.wavelengths = hwss_t(reservoir.heroWavelength, wavelengths.yzw);
+    }
     testBeam.r = wo;
-    testBeam.hwss_comps = hwss_comps;
-    testBeam.L = hwss_t(cachedIntensity);
+    testBeam.L = hwss_t(reservoir.cachedIntensity);
     bsdf.eval(sd, wi, lobe, testBeam);
     float intensitySum = 0;
-    for (int i = 0; i < hwss_comps; ++i)
+    for (int i = 0; i < testBeam.hwss_comps; ++i)
     {
         intensitySum += testBeam.L[i];
     }
-    return intensitySum / hwss_comps;
+    return intensitySum / testBeam.hwss_comps;
 }
 
 // Shadow ray epsilon is a small value used to nudge the shadow ray origin along the normal
@@ -39,9 +44,9 @@ struct SpatialReusePass
 {
     static const uint kMCap = 30;
     static const float FLT_LARGE = 1e20f;
-    static const uint kNeighborCount = 5;
+    static const uint kNeighborCount = 3;
     static const float kDepthThreshold = 0.1f;
-    static const float kNormalThreshold = 0.1f;
+    static const float kNormalThreshold = 0.9f;
     static const float kSearchRadius = 30.0f;
 
     uint2   gFrameDim; ///< Frame dimensions.
@@ -107,7 +112,7 @@ struct SpatialReusePass
             if (distSq > FLT_EPSILON && all(isfinite(dir)))
             {
                 dir = normalize(dir);
-                float currPdf = evalTargetPDF(sd, bsdf, currentReservoir.cachedIntensity, lobes, currentReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, dir);
+                float currPdf = evalTargetPDF(sd, bsdf, currentReservoir, lobes, gWavelengthsDI[bufferIndex], bounce.wi, dir);
                 if (currPdf > 0.f && isfinite(currPdf))
                 {
                     outputReservoir.update(currentReservoir, currPdf, sg);
@@ -117,14 +122,12 @@ struct SpatialReusePass
 
         float3 rayOrigin = computeRayOrigin(surfaceData.position, surfaceData.normal);
 
-        uint validNeighborFlags = 0;
-
-#if 1
-        SampleGenerator sg1 = sg;
+        float pSum = currentReservoir.W * currentReservoir.M;
+		float pStar = currentReservoir.W;
         [unroll]
         for (int i = 0; i < kNeighborCount; i++)
         {
-            uint2 neighborPixel = getRandomNeighborPixel(pixel, sg1, kSearchRadius);
+            uint2 neighborPixel = getRandomNeighborPixel(pixel, sg, kSearchRadius);
 
             // Discard pixel if out of bounds
 	        if(any(neighborPixel >= gFrameDim) || any(neighborPixel < 0))
@@ -160,34 +163,37 @@ struct SpatialReusePass
                 continue;
             }
 
-            if (neighborReservoir.M > 0)
+            float3 dir = lightPos - surfaceData.position;
+            float distSq = dot(dir, dir);
+            if (distSq < FLT_EPSILON || !all(isfinite(dir)))
             {
-                float3 dir = lightPos - surfaceData.position;
-                float distSq = dot(dir, dir);
-                if (distSq < FLT_EPSILON || !all(isfinite(dir)))
-                {
-                    continue;
-                }
-                dir = normalize(dir);
+                continue;
+            }
+            dir = normalize(dir);
 
-                // Check if direction is valid for the current surface (not pointing through backface unless transmission)
-                const bool isTransmission = (lobes & (uint)LobeType::NonDeltaTransmission) != 0;
-                const float cosTheta = dot(surfaceData.normal, dir);
-                if (!isTransmission && cosTheta <= 0.f)
-                {
-                    continue;
-                }
+            // Check if direction is valid for the current surface (not pointing through backface unless transmission)
+            const bool isTransmission = (lobes & (uint)LobeType::NonDeltaTransmission) != 0 || (lobes & (uint)LobeType::DeltaTransmission);
+            const float cosTheta = dot(surfaceData.normal, dir);
+            if (!isTransmission && cosTheta <= 0.f)
+            {
+                continue;
+            }
 
-                float neighborPdf = evalTargetPDF(sd, bsdf, neighborReservoir.cachedIntensity, lobes, neighborReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, dir);
-                if (neighborPdf > 0.f && isfinite(neighborPdf))
-                {
-                    outputReservoir.update(neighborReservoir, neighborPdf, sg);
+            float neighborPixelTargetPDF = evalTargetPDF(sd, bsdf, neighborReservoir, lobes, gWavelengthsDI[bufferIndex], bounce.wi, dir);
+            if (isfinite(neighborPixelTargetPDF))
+            {
+                pSum += neighborPixelTargetPDF * neighborReservoir.M;
+                if (outputReservoir.update(neighborReservoir, neighborPixelTargetPDF, sg)) {
+                    pStar = neighborPixelTargetPDF;
                 }
             }
         }
+
         if (outputReservoir.M > 0)
         {
-            outputReservoir.W = outputReservoir.W > 0.f ? (outputReservoir.weightSum / outputReservoir.M) / (outputReservoir.W) : 0.f;
+            //outputReservoir.W = outputReservoir.W > 0.f ? (outputReservoir.weightSum / outputReservoir.M) / (outputReservoir.W) : 0.f;
+            float m = pSum > 0.f ? pStar / pSum : 0.f;
+            outputReservoir.W = outputReservoir.W > 0.f ? (outputReservoir.weightSum * m) / outputReservoir.W : 0.f;
             outputReservoir.M = min(outputReservoir.M, kMCap);
             gOutReservoirs[bufferIndex] = outputReservoir.pack();
         }
@@ -195,7 +201,6 @@ struct SpatialReusePass
         {
             gOutReservoirs[bufferIndex] = currentReservoir.pack();
         }
-#endif
     }
 }
 

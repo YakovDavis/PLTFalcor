@@ -16,20 +16,25 @@ import Scene.Intersection;
 import Scene.ShadingData;
 import Scene.Scene;
 
-float evalTargetPDF(const ShadingData sd, const IMaterialInstance bsdf, const float cachedIntensity, const uint lobe, const uint hwss_comps, hwss_t wavelengths, const float3 wi, const float3 wo)
+float evalTargetPDF(const ShadingData sd, const IMaterialInstance bsdf, const Reservoir reservoir, const uint lobe, hwss_t wavelengths, const float3 wi, const float3 wo)
 {
     PLTBeam testBeam = {};
-    testBeam.wavelengths = wavelengths;
+    testBeam.hwss_comps = reservoir.hwss_comps;
+    if (testBeam.hwss_comps > 1) {
+        testBeam.wavelengths = wavelengths;
+    }
+    else {
+        testBeam.wavelengths = hwss_t(reservoir.heroWavelength, wavelengths.yzw);
+    }
     testBeam.r = wo;
-    testBeam.hwss_comps = hwss_comps;
-    testBeam.L = hwss_t(cachedIntensity);
+    testBeam.L = hwss_t(reservoir.cachedIntensity);
     bsdf.eval(sd, wi, lobe, testBeam);
     float intensitySum = 0;
-    for (int i = 0; i < hwss_comps; ++i)
+    for (int i = 0; i < testBeam.hwss_comps; ++i)
     {
         intensitySum += testBeam.L[i];
     }
-    return intensitySum / hwss_comps;
+    return intensitySum / testBeam.hwss_comps;
 }
 
 struct TemporalReusePass
@@ -151,7 +156,7 @@ struct TemporalReusePass
         if (prevReservoir.M > 0)
         {
             float3 dir = normalize(lightPos - surfaceData.position);
-            float prevPdf = evalTargetPDF(sd, bsdf, prevReservoir.cachedIntensity, lobes, prevReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, dir);
+            float prevPdf = evalTargetPDF(sd, bsdf, prevReservoir, lobes, gWavelengthsDI[bufferIndex], bounce.wi, dir);
             outputReservoir.update(prevReservoir, prevPdf, sg);
         }
 
@@ -159,7 +164,7 @@ struct TemporalReusePass
         {
             float3 currLightPos = currentReservoir.sls.distant > 0 ? surfaceData.position + currentReservoir.sls.posW : currentReservoir.sls.posW;
             float3 dir = normalize(currLightPos - surfaceData.position);
-            float currPdf = evalTargetPDF(sd, bsdf, currentReservoir.cachedIntensity, lobes, currentReservoir.hwss_comps, gWavelengthsDI[bufferIndex], bounce.wi, dir);
+            float currPdf = evalTargetPDF(sd, bsdf, currentReservoir, lobes, gWavelengthsDI[bufferIndex], bounce.wi, dir);
             outputReservoir.update(currentReservoir, currPdf, sg);
         }
 
