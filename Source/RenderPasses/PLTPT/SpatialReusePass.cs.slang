@@ -147,10 +147,6 @@ struct SpatialReusePass
                 continue;
             }
 
-            if (neighborReservoir.hwss_comps != currentReservoir.hwss_comps) {
-                continue;
-            }
-
             if (!isValidNeighbor(surfaceData.normal, neighborSurfaceData.normal, surfaceData.depth, neighborSurfaceData.depth, kDepthThreshold, kNormalThreshold))
             {
                 continue;

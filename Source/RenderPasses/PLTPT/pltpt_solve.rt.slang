@@ -468,7 +468,8 @@ void NEE(inout PLTSolve solveData,
         //outputRes.update(sls, targetPDF, sls.pdf, solveData.sg);
         outputRes.weightSum = targetPDF / sls.pdf;
         outputRes.M = 1;
-        outputRes.W = targetPDF;
+        const float bsdfPdf = bsdf.pdf(sd, ls.dir, ls.beam.wavelengths.x);
+        outputRes.W = targetPDF * bsdfPdf;
         outputRes.sls = sls;
         outputRes.hwss_comps = ls.beam.hwss_comps;
         outputRes.cachedIntensity = ls.beam.getAverageIntensity();

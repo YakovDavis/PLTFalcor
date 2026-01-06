@@ -52,20 +52,17 @@ struct TemporalReusePass
     StructuredBuffer<PackedSurfaceData> gPrevSurfaceData;   ///< Surface data for the previous frame.
     RWStructuredBuffer<PackedReservoir> gPrevReservoirs;  ///< Buffer with reservoirs from the previous frame.
     StructuredBuffer<PackedReservoir> gReservoirs; ///< Buffer with reservoirs.
-    StructuredBuffer<BounceData> firstBounceBuffer;
-    StructuredBuffer<hwss_t> gWavelengthsDI;
+    StructuredBuffer<BounceData> firstBounceBuffer; ///< Buffer with first bounces from the camera rays.
+    StructuredBuffer<hwss_t> gWavelengthsDI; ///< Wavelengths used in current pass.
 
     void execute(const uint2 pixel)
     {
         if (any(pixel >= gFrameDim)) return;
 
-        // Get index for the structured buffer access.
         uint bufferIndex = pixel.y * gFrameDim.x + pixel.x;
 
-        // Create sample generator.
         SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
 
-        // Get reservoir with initial candidate samples from the previous pass.
         Reservoir currentReservoir = Reservoir::unpack(gReservoirs[bufferIndex]);
 
         // Reproject the pixel position
@@ -80,7 +77,6 @@ struct TemporalReusePass
         }
         uint2 reprojPos = uint2(reprojPosInt);
 
-        // Get surface data for the current pixel.
         SurfaceData surfaceData = SurfaceData::unpack(gSurfaceData[bufferIndex]);
         if (!surfaceData.isValid())
             return;
@@ -98,23 +94,25 @@ struct TemporalReusePass
                 offset.x = int((sampleNext1D(sg) - 0.5) * kMaxOffset);
                 offset.y = int((sampleNext1D(sg) - 0.5) * kMaxOffset);
             }
-            // Compute as int2 first to handle negative offsets correctly, then clamp
             int2 prevPixelInt = int2(reprojPos) + offset;
             if (any(prevPixelInt < int2(1)) || any(prevPixelInt >= int2(gFrameDim))) // 1 and not 0 because 0 causes artifacts
                 continue;
             prevPixel = uint2(prevPixelInt);
 
-            // Load shading data for the previous pixel.
             prevSurfaceData = SurfaceData::unpack(gPrevSurfaceData[getBufferIndex(prevPixel, gFrameDim)]);
             if (!prevSurfaceData.isValid())
                 continue;
 
-            // Compare the difference in camera distance, and the angle between normals.
             if (!isValidNeighbor(surfaceData.normal, prevSurfaceData.normal, surfaceData.depth, prevSurfaceData.depth, kDepthThreshold, kNormalThreshold))
                 continue;
 
             neighborFound = true;
             break;
+        }
+
+        if (!neighborFound) {
+            gPrevReservoirs[bufferIndex] = currentReservoir.pack();
+            return;
         }
 
         // Retrieve bounce for bsdf eval
@@ -131,28 +129,23 @@ struct TemporalReusePass
 
         const uint lobes = bounce.sampledBsdfLobe;
 
-        // Get index for the structured buffer access for the previous pixel.
-        // Use reprojPos directly if neighbor validation failed, otherwise use the validated prevPixel
-        uint2 reusePixel = neighborFound ? prevPixel : reprojPos;
-        uint prevBufferIndex = reusePixel.y * gFrameDim.x + reusePixel.x;
+        uint prevBufferIndex = prevPixel.y * gFrameDim.x + prevPixel.x;
 
         // Clamp to valid bounds
-        if (any(reusePixel >= gFrameDim) || any(reusePixel < 0)) {
+        if (any(prevPixel >= gFrameDim) || any(prevPixel < 0)) {
             gPrevReservoirs[bufferIndex] = currentReservoir.pack();
             return;
         }
 
         Reservoir outputReservoir = {};
         outputReservoir.hwss_comps = currentReservoir.hwss_comps;
-        // Get final reservoir from the previous frame.
+
         Reservoir prevReservoir = Reservoir::unpack(gPrevReservoirs[prevBufferIndex]);
 
-        // Clamp the previous frame's M.
         prevReservoir.M = min(prevReservoir.M, kMCap);
 
         float3 lightPos = prevReservoir.sls.distant > 0 ? surfaceData.position + prevReservoir.sls.posW : prevReservoir.sls.posW;
 
-        // Standard combination of multiple reservoirs (Algorithm 4 from the original paper):
         if (prevReservoir.M > 0)
         {
             float3 dir = normalize(lightPos - surfaceData.position);
@@ -170,7 +163,6 @@ struct TemporalReusePass
 
         outputReservoir.W = outputReservoir.W  > 0.f ? (outputReservoir.weightSum / outputReservoir.M) / outputReservoir.W : 0.f;
 
-        // Store combined reservoir.
         gPrevReservoirs[bufferIndex] = outputReservoir.pack();
     }
 }

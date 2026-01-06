@@ -31,20 +31,17 @@ struct TemporalReuseGIPass
     StructuredBuffer<PackedSurfaceData> gPrevSurfaceData;   ///< Surface data for the previous frame.
     RWStructuredBuffer<PackedReservoirGI> gPrevGIReservoirs;  ///< Buffer with reservoirs from the previous frame.
     StructuredBuffer<PackedReservoirGI> gGIReservoirs; ///< Buffer with reservoirs.
-    StructuredBuffer<BounceData> firstBounceBuffer;
-    StructuredBuffer<hwss_t> gWavelengthsGI;
+    StructuredBuffer<BounceData> firstBounceBuffer; ///< Buffer with first bounces from the camera rays.
+    StructuredBuffer<hwss_t> gWavelengthsGI; ///< Wavelengths used in current pass.
 
     void execute(const uint2 pixel)
     {
         if (any(pixel >= gFrameDim)) return;
 
-        // Get index for the structured buffer access.
         uint bufferIndex = pixel.y * gFrameDim.x + pixel.x;
 
-        // Create sample generator.
         SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
 
-        // Get reservoir with initial candidate samples from the previous pass.
         ReservoirGI currentReservoir = ReservoirGI::unpack(gGIReservoirs[bufferIndex]);
 
         // Reproject the pixel position
@@ -59,7 +56,6 @@ struct TemporalReuseGIPass
         }
         uint2 reprojPos = uint2(reprojPosInt);
 
-        // Get surface data for the current pixel.
         SurfaceData surfaceData = SurfaceData::unpack(gSurfaceData[bufferIndex]);
         if (!surfaceData.isValid())
             return;
@@ -77,23 +73,25 @@ struct TemporalReuseGIPass
                 offset.x = int((sampleNext1D(sg) - 0.5) * kMaxOffset);
                 offset.y = int((sampleNext1D(sg) - 0.5) * kMaxOffset);
             }
-            // Compute as int2 first to handle negative offsets correctly, then clamp
             int2 prevPixelInt = int2(reprojPos) + offset;
             if (any(prevPixelInt < int2(1)) || any(prevPixelInt >= int2(gFrameDim))) // 1 and not 0 because 0 causes artifacts
                 continue;
             prevPixel = uint2(prevPixelInt);
 
-            // Load shading data for the previous pixel.
             prevSurfaceData = SurfaceData::unpack(gPrevSurfaceData[getBufferIndex(prevPixel, gFrameDim)]);
             if (!prevSurfaceData.isValid())
                 continue;
 
-            // Compare the difference in camera distance, and the angle between normals.
             if (!isValidNeighbor(surfaceData.normal, prevSurfaceData.normal, surfaceData.depth, prevSurfaceData.depth, kDepthThreshold, kNormalThreshold))
                 continue;
 
             neighborFound = true;
             break;
+        }
+
+        if (!neighborFound) {
+            gPrevGIReservoirs[bufferIndex] = currentReservoir.pack();
+            return;
         }
 
         // Retrieve bounce for bsdf eval
@@ -110,42 +108,28 @@ struct TemporalReuseGIPass
 
         const uint lobes = bounce.sampledBsdfLobe;
 
-        // Get index for the structured buffer access for the previous pixel.
-        // Use reprojPos directly if neighbor validation failed, otherwise use the validated prevPixel
-        uint2 reusePixel = neighborFound ? prevPixel : reprojPos;
-        uint prevBufferIndex = reusePixel.y * gFrameDim.x + reusePixel.x;
-
-        // Clamp to valid bounds
-        if (any(reusePixel >= gFrameDim) || any(reusePixel < 0)) {
-            gPrevGIReservoirs[bufferIndex] = currentReservoir.pack();
-            return;
-        }
+        uint prevBufferIndex = prevPixel.y * gFrameDim.x + prevPixel.x;
 
         ReservoirGI outputReservoir;
-        // Get final reservoir from the previous frame.
+
         ReservoirGI prevReservoir = ReservoirGI::unpack(gPrevGIReservoirs[prevBufferIndex]);
 
-        // Clamp the previous frame's M.
         prevReservoir.M = min(prevReservoir.M, kMCap);
 
-        // Standard combination of multiple reservoirs (Algorithm 4 from the original paper):
         if (prevReservoir.M > 0)
         {
-            //float3 dir = normalize(currentReservoir.sls.posW - v.posW);
-            float prevPdf = prevReservoir.cachedIntensity; // * bsdf.pdf(sd, bounce.wi, gWavelengthsGI[bufferIndex][0]);
+            float prevPdf = prevReservoir.cachedIntensity;
             outputReservoir.update(prevReservoir, prevPdf, sg);
         }
 
         if (currentReservoir.M > 0)
         {
-            //float3 dir = normalize(currentReservoir.sls.posW - v.posW);
-            float currPdf = currentReservoir.cachedIntensity; //  * bsdf.pdf(sd, bounce.wi, gWavelengthsGI[bufferIndex][0]);
+            float currPdf = currentReservoir.cachedIntensity;
             outputReservoir.update(currentReservoir, currPdf, sg);
         }
 
         outputReservoir.W = outputReservoir.W  > 0.f ? outputReservoir.weightSum / (outputReservoir.M * outputReservoir.W) : 0.f;
 
-        // Store combined reservoir.
         gPrevGIReservoirs[bufferIndex] = outputReservoir.pack();
     }
 }
