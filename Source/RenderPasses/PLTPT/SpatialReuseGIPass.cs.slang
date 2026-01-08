@@ -24,8 +24,8 @@ struct SpatialReuseGIPass
     static const float FLT_LARGE = 1e20f;
     static const uint kMCap = 30;
     static const uint kNeighborCount = 5;
-    static const float kDepthThreshold = 0.2f;
-    static const float kNormalThreshold = 0.5f;
+    static const float kDepthThreshold = 0.3f;
+    static const float kNormalThreshold = 0.9f;
     static const float kMinRadius = 100.f;
 
     uint2   gFrameDim; ///< Frame dimensions.
@@ -119,7 +119,7 @@ struct SpatialReuseGIPass
                 continue;
             }
 
-            if (!isValidNeighbor(surfaceData.normal, neighborSurfaceData.normal, surfaceData.depth, neighborSurfaceData.depth, kDepthThreshold, kNormalThreshold))
+            if (!isValidNeighbor(surfaceData.normal, neighborSurfaceData.normal, surfaceData.depth, neighborSurfaceData.depth, kNormalThreshold, kDepthThreshold))
             {
                 radius = max(kMinRadius, radius * 0.5f);
                 continue;

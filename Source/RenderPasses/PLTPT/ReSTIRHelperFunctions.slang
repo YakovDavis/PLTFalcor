@@ -9,10 +9,6 @@ import Scene.Material.ShadingUtils;
 
 import Utils.Math.BitTricks;
 
-// Thresholds for determining valid neighboring pixels in terms of normal and depth similarity.
-static const float kNormalThreshold = 0.9f;
-static const float kDepthThreshold = 0.3f;
-
 /** Check if a neighboring pixel is valid based on the similarity of their normal vectors and depth values.
  */
 bool isValidNeighbor(float3 norm, float3 neighborNorm, float depth, float neighborDepth, float normalThreshold, float depthThreshold)
@@ -20,11 +16,6 @@ bool isValidNeighbor(float3 norm, float3 neighborNorm, float depth, float neighb
     // Check if the cosine of the angle between the normals is above the threshold and
     // if the relative difference in depth is within the threshold.
     return (dot(norm, neighborNorm) >= normalThreshold) && abs(depth - neighborDepth) <= depthThreshold * max(depth, neighborDepth);
-}
-
-bool isValidNeighbor(float3 norm, float3 neighborNorm, float depth, float neighborDepth)
-{
-    return isValidNeighbor(norm, neighborNorm, depth, neighborDepth, kNormalThreshold, kDepthThreshold);
 }
 
 /** Compute a linear index for a 2D buffer.

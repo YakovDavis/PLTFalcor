@@ -532,33 +532,37 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
         mSampleTracer.pVars->getRootVar()["CB"]["kTile"] = uint2(x,y);
         mSolveTracer.pVars->getRootVar()["CB"]["kTile"] = uint2(x,y);
 
-        mpScene->raytrace(pRenderContext, mSampleTracer.pProgram.get(), mSampleTracer.pVars, { mTileSize, mTileSize, 1 });
-        mpScene->raytrace(pRenderContext, mSolveTracer.pProgram.get(),  mSolveTracer.pVars,  { mTileSize, mTileSize, 1 });
+        {
+            FALCOR_PROFILE(pRenderContext, "PLTPT::PLTSample");
+            mpScene->raytrace(pRenderContext, mSampleTracer.pProgram.get(), mSampleTracer.pVars, { mTileSize, mTileSize, 1 });
+        }
+        {
+            FALCOR_PROFILE(pRenderContext, "PLTPT::PLTSolve");
+            mpScene->raytrace(pRenderContext, mSolveTracer.pProgram.get(),  mSolveTracer.pVars,  { mTileSize, mTileSize, 1 });
+        }
     }
 
+    Buffer::SharedPtr reservoirInput = mpReservoirBuffers[mReservoirBufferIndex];
+    Buffer::SharedPtr reservoirOutput = mpReservoirBuffers[(mReservoirBufferIndex + 1) % 2];
     if (mDoTemporalReuse) {
-        temporalReusePass(pRenderContext, renderData);
-        if (mDoSpatialReuse) {
-            spatialReusePass(pRenderContext, renderData);
-        }
-        else
-        {
-            std::swap(mpReservoirBuffers[0], mpReservoirBuffers[1]);
-        }
+        temporalReusePass(pRenderContext, renderData, reservoirOutput, reservoirInput);
+        std::swap(reservoirInput, reservoirOutput);
+    }
+    if (mDoSpatialReuse) {
+        spatialReusePass(pRenderContext, renderData, reservoirInput, reservoirOutput);
     }
 
+    Buffer::SharedPtr reservoirGIInput = mpReservoirGIBuffers[mReservoirBufferIndex];
+    Buffer::SharedPtr reservoirGIOutput = mpReservoirGIBuffers[(mReservoirBufferIndex + 1) % 2];
     if (mDoTemporalReuseGI) {
-        temporalReuseGIPass(pRenderContext, renderData);
-        if (mDoSpatialReuseGI) {
-            spatialReuseGIPass(pRenderContext, renderData);
-        }
-        else
-        {
-            std::swap(mpReservoirGIBuffers[0], mpReservoirGIBuffers[1]);
-        }
+        temporalReuseGIPass(pRenderContext, renderData, reservoirGIOutput, reservoirGIInput);
+        std::swap(reservoirGIInput, reservoirGIOutput);
+    }
+    if (mDoSpatialReuseGI) {
+        spatialReuseGIPass(pRenderContext, renderData, reservoirGIInput, reservoirGIOutput);
     }
 
-    finalizePass(pRenderContext, renderData);
+    finalizePass(pRenderContext, renderData, mpReservoirBuffers[mReservoirBufferIndex], mpReservoirGIBuffers[mReservoirBufferIndex]);
 
     mReservoirBufferIndex = (mReservoirBufferIndex + 1) % 2;
     mFrameCount++;
@@ -735,7 +739,7 @@ void PLTPT::createBuffers(RenderContext* pRenderContext, const RenderData& rende
     }
 }
 
-void PLTPT::temporalReusePass(RenderContext* pRenderContext, const RenderData& renderData)
+void PLTPT::temporalReusePass(RenderContext* pRenderContext, const RenderData& renderData, Buffer::SharedPtr prevReservoirs, Buffer::SharedPtr currReservoirs)
 {
     FALCOR_PROFILE(pRenderContext, "PLTPT::temporalReusePass");
 
@@ -748,11 +752,11 @@ void PLTPT::temporalReusePass(RenderContext* pRenderContext, const RenderData& r
     var["gFrameCount"] = mFrameCount;
 
     var["gMotionVectors"] = renderData.getTexture(kInputMotionVectors);
-    var["gReservoirs"] = mpReservoirBuffers[mReservoirBufferIndex];
+    var["gReservoirs"] = currReservoirs;
     var["gSurfaceData"] = mpSurfaceData[mReservoirBufferIndex];
 
     var["gPrevSurfaceData"] = mpSurfaceData[(mReservoirBufferIndex + 1) % 2];
-    var["gPrevReservoirs"] = mpReservoirBuffers[(mReservoirBufferIndex + 1) % 2];
+    var["gPrevReservoirs"] = prevReservoirs;
 
     var["firstBounceBuffer"] = mpFirstBounceBuffer;
     var["gWavelengthsDI"] = mpWavelengthsDIBuffer;
@@ -764,7 +768,7 @@ void PLTPT::temporalReusePass(RenderContext* pRenderContext, const RenderData& r
     mpTemporalReusePass->execute(pRenderContext, { targetDim, 1u });
 }
 
-void PLTPT::spatialReusePass(RenderContext* pRenderContext, const RenderData& renderData)
+void PLTPT::spatialReusePass(RenderContext* pRenderContext, const RenderData& renderData, Buffer::SharedPtr inputReservoirs, Buffer::SharedPtr outputReservoirs)
 {
     FALCOR_PROFILE(pRenderContext, "PLTPT::spatialReusePass");
 
@@ -776,10 +780,10 @@ void PLTPT::spatialReusePass(RenderContext* pRenderContext, const RenderData& re
     var["gFrameDim"] = targetDim;
     var["gFrameCount"] = mFrameCount;
 
-    var["gReservoirs"] = mpReservoirBuffers[(mReservoirBufferIndex + 1) % 2];
+    var["gReservoirs"] = inputReservoirs;
     var["gSurfaceData"] = mpSurfaceData[(mReservoirBufferIndex + 1) % 2];
 
-    var["gOutReservoirs"] = mpReservoirBuffers[mReservoirBufferIndex];
+    var["gOutReservoirs"] = outputReservoirs;
 
     var["firstBounceBuffer"] = mpFirstBounceBuffer;
     var["gWavelengthsDI"] = mpWavelengthsDIBuffer;
@@ -789,7 +793,7 @@ void PLTPT::spatialReusePass(RenderContext* pRenderContext, const RenderData& re
     mpSpatialReusePass->execute(pRenderContext, { targetDim, 1u });
 }
 
-void PLTPT::temporalReuseGIPass(RenderContext* pRenderContext, const RenderData& renderData)
+void PLTPT::temporalReuseGIPass(RenderContext* pRenderContext, const RenderData& renderData, Buffer::SharedPtr prevReservoirs, Buffer::SharedPtr currReservoirs)
 {
     FALCOR_PROFILE(pRenderContext, "PLTPT::temporalReuseGIPass");
 
@@ -802,11 +806,11 @@ void PLTPT::temporalReuseGIPass(RenderContext* pRenderContext, const RenderData&
     var["gFrameCount"] = mFrameCount;
 
     var["gMotionVectors"] = renderData.getTexture(kInputMotionVectors);
-    var["gGIReservoirs"] = mpReservoirGIBuffers[mReservoirBufferIndex];
+    var["gGIReservoirs"] = currReservoirs;
     var["gSurfaceData"] = mpSurfaceData[mReservoirBufferIndex];
 
     var["gPrevSurfaceData"] = mpSurfaceData[(mReservoirBufferIndex + 1) % 2];
-    var["gPrevGIReservoirs"] = mpReservoirGIBuffers[(mReservoirBufferIndex + 1) % 2];
+    var["gPrevGIReservoirs"] = prevReservoirs;
 
     var["firstBounceBuffer"] = mpFirstBounceBuffer;
     var["gWavelengthsGI"] = mpWavelengthsGIBuffer;
@@ -818,7 +822,7 @@ void PLTPT::temporalReuseGIPass(RenderContext* pRenderContext, const RenderData&
     mpTemporalReuseGIPass->execute(pRenderContext, { targetDim, 1u });
 }
 
-void PLTPT::spatialReuseGIPass(RenderContext* pRenderContext, const RenderData& renderData)
+void PLTPT::spatialReuseGIPass(RenderContext* pRenderContext, const RenderData& renderData, Buffer::SharedPtr inputReservoirs, Buffer::SharedPtr outputReservoirs)
 {
     FALCOR_PROFILE(pRenderContext, "PLTPT::spatialReuseGIPass");
 
@@ -830,10 +834,10 @@ void PLTPT::spatialReuseGIPass(RenderContext* pRenderContext, const RenderData& 
     var["gFrameDim"] = targetDim;
     var["gFrameCount"] = mFrameCount;
 
-    var["gGIReservoirs"] = mpReservoirGIBuffers[(mReservoirBufferIndex + 1) % 2];
+    var["gGIReservoirs"] = inputReservoirs;
     var["gSurfaceData"] = mpSurfaceData[(mReservoirBufferIndex + 1) % 2];
 
-    var["gOutGIReservoirs"] = mpReservoirGIBuffers[mReservoirBufferIndex];
+    var["gOutGIReservoirs"] = outputReservoirs;
 
     var["firstBounceBuffer"] = mpFirstBounceBuffer;
     var["gWavelengthsGI"] = mpWavelengthsGIBuffer;
@@ -844,7 +848,7 @@ void PLTPT::spatialReuseGIPass(RenderContext* pRenderContext, const RenderData& 
 }
 
 
-void PLTPT::finalizePass(RenderContext* pRenderContext, const RenderData& renderData)
+void PLTPT::finalizePass(RenderContext* pRenderContext, const RenderData& renderData, Buffer::SharedPtr reservoirs, Buffer::SharedPtr reservoirsGI)
 {
     FALCOR_PROFILE(pRenderContext, "PLTPT::finalizePass");
 
@@ -863,8 +867,8 @@ void PLTPT::finalizePass(RenderContext* pRenderContext, const RenderData& render
 
     var["gOutputColor"] = renderData.getTexture("color");
 
-    var["reservoirBuffer"] = mpReservoirBuffers[mReservoirBufferIndex];
-    var["reservoirGIBuffer"] = mpReservoirGIBuffers[mReservoirBufferIndex];
+    var["reservoirBuffer"] = reservoirs;
+    var["reservoirGIBuffer"] = reservoirsGI;
     var["firstBounceBuffer"] = mpFirstBounceBuffer;
     var["gWavelengthsDI"] = mpWavelengthsDIBuffer;
     var["gWavelengthsGI"] = mpWavelengthsGIBuffer;

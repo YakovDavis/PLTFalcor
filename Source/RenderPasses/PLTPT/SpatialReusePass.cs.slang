@@ -45,7 +45,7 @@ struct SpatialReusePass
     static const uint kMCap = 30;
     static const float FLT_LARGE = 1e20f;
     static const uint kNeighborCount = 3;
-    static const float kDepthThreshold = 0.1f;
+    static const float kDepthThreshold = 0.3f;
     static const float kNormalThreshold = 0.9f;
     static const float kSearchRadius = 30.0f;
 
@@ -147,7 +147,7 @@ struct SpatialReusePass
                 continue;
             }
 
-            if (!isValidNeighbor(surfaceData.normal, neighborSurfaceData.normal, surfaceData.depth, neighborSurfaceData.depth, kDepthThreshold, kNormalThreshold))
+            if (!isValidNeighbor(surfaceData.normal, neighborSurfaceData.normal, surfaceData.depth, neighborSurfaceData.depth, kNormalThreshold, kDepthThreshold))
             {
                 continue;
             }

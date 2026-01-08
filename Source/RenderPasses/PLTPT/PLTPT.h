@@ -67,15 +67,15 @@ private:
 
     void createBuffers(RenderContext* pRenderContext, const RenderData& renderData);
 
-    void temporalReusePass(RenderContext* pRenderContext, const RenderData& renderData);
-    void spatialReusePass(RenderContext* pRenderContext, const RenderData& renderData);
+    void temporalReusePass(RenderContext* pRenderContext, const RenderData& renderData, Buffer::SharedPtr prevReservoirs, Buffer::SharedPtr currReservoirs);
+    void spatialReusePass(RenderContext* pRenderContext, const RenderData& renderData, Buffer::SharedPtr inputReservoirs, Buffer::SharedPtr outputReservoirs);
 
-    void temporalReuseGIPass(RenderContext* pRenderContext, const RenderData& renderData);
-    void spatialReuseGIPass(RenderContext* pRenderContext, const RenderData& renderData);
+    void temporalReuseGIPass(RenderContext* pRenderContext, const RenderData& renderData, Buffer::SharedPtr prevReservoirs, Buffer::SharedPtr currReservoirs);
+    void spatialReuseGIPass(RenderContext* pRenderContext, const RenderData& renderData, Buffer::SharedPtr inputReservoirs, Buffer::SharedPtr outputReservoirs);
 
     void loadSurfaceDataPass(RenderContext* pRenderContext, const RenderData& renderData);
 
-    void finalizePass(RenderContext* pRenderContext, const RenderData& renderData);
+    void finalizePass(RenderContext* pRenderContext, const RenderData& renderData, Buffer::SharedPtr reservoirs, Buffer::SharedPtr reservoirsGI);
 
     // Internal state
     Scene::SharedPtr            mpScene;                        ///< Current scene.
@@ -121,7 +121,7 @@ private:
     bool                        mDoSpatialReuse = true;
 
     bool                        mDoTemporalReuseGI = true;
-    bool                        mDoSpatialReuseGI = false;
+    bool                        mDoSpatialReuseGI = true;
 
     bool                        mDoNEE = true;
     bool                        mDoMIS = true;
