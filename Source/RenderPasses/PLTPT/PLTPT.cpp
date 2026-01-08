@@ -490,8 +490,15 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
         mSampleTracer.pVars->getRootVar()["CB"]["kTile"] = uint2(x,y);
         mSolveTracer.pVars->getRootVar()["CB"]["kTile"] = uint2(x,y);
 
-        mpScene->raytrace(pRenderContext, mSampleTracer.pProgram.get(), mSampleTracer.pVars, { mTileSize, mTileSize, 1 });
-        mpScene->raytrace(pRenderContext, mSolveTracer.pProgram.get(),  mSolveTracer.pVars,  { mTileSize, mTileSize, 1 });
+        {
+            FALCOR_PROFILE(pRenderContext, "PLTPT::PLTSample");
+            mpScene->raytrace(pRenderContext, mSampleTracer.pProgram.get(), mSampleTracer.pVars, { mTileSize, mTileSize, 1 });
+        }
+
+        {
+            FALCOR_PROFILE(pRenderContext, "PLTPT::PLTSolve");
+            mpScene->raytrace(pRenderContext, mSolveTracer.pProgram.get(),  mSolveTracer.pVars,  { mTileSize, mTileSize, 1 });
+        }
     }
 
 
