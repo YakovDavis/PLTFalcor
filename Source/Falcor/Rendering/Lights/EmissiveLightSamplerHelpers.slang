@@ -190,6 +190,8 @@ bool sampleTriangleFromUV<S: ISampleGenerator>(const float2 u, const float3 posW
     // Save light sample triangle barycentric coordinates
     ls.uv = u;
 
+    ls.wavelengths = wavelengths;
+
     // TODO: We can simplify the expressions by using the unnormalized quantities for computing the pdf.
     //ls.pdf = -2.f * distSqr * ls.distance / (dot(N, L);    // Optimized (except N would have to be properly flipped above, before normalW is computed).
     return true;

@@ -32,6 +32,7 @@ import Utils.HWSS;
 import Utils.Sampling.SampleGeneratorInterface;
 import Rendering.Lights.EmissiveLightSamplerHelpers;
 import Rendering.Lights.EmissiveLightSamplerInterface;
+import Rendering.Lights.StoredLightSample;
 
 struct EmissivePower
 {

@@ -179,7 +179,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
             ls.beam.hwss_comps = reservoir.hwss_comps;
             if (validSample) {
                 forwardUnwindDI(bounce, triangleHit, v, pixel, ls.beam);
-                finalColor += measure(bounce.pathContribution, ls.beam) * reservoir.W;
+                finalColor += measure(bounce.pathContribution, ls.beam);
             }
         }
     }
@@ -212,7 +212,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         ls.beam.hwss_comps = reservoirGI.hwss_comps;
         if (validSample) {
             forwardUnwindGI(bounce, triangleHit, v, pixel, reservoirGI, ls.beam);
-            finalColor += measure(bounceGI.pathContribution, ls.beam) * reservoirGI.W;
+            finalColor += measure(bounceGI.pathContribution, ls.beam);
         }
     }
     gOutputColor[pixel] = float4(finalColor, 1.f);

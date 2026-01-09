@@ -30,7 +30,6 @@ __exported import Rendering.Lights.EmissiveLightSamplerInterface;
 __exported import Utils.Sampling.SampleGeneratorInterface;
 import Utils.HWSS;
 import Utils.Color.SpectrumUtils;
-import Rendering.Lights.StoredLightSample;
 
 /** The host sets the _EMISSIVE_LIGHT_SAMPLER_TYPE define to select sampler.
 
@@ -44,7 +43,7 @@ import Rendering.Lights.StoredLightSample;
 // This is a workaround to avoid compiler warnings since Slang warns on undefined
 // preprocessor defines even if they are inside #ifdef .. #endif blocks.
 #ifndef _EMISSIVE_LIGHT_SAMPLER_TYPE
-#define _EMISSIVE_LIGHT_SAMPLER_TYPE EMISSIVE_LIGHT_SAMPLER_NULL
+#define _EMISSIVE_LIGHT_SAMPLER_TYPE EMISSIVE_LIGHT_SAMPLER_POWER
 #endif
 
 #if _EMISSIVE_LIGHT_SAMPLER_TYPE == EMISSIVE_LIGHT_SAMPLER_UNIFORM
@@ -60,6 +59,7 @@ import Rendering.Lights.StoredLightSample;
     typedef EmissivePowerSampler EmissiveLightSampler;
 
 #elif _EMISSIVE_LIGHT_SAMPLER_TYPE == EMISSIVE_LIGHT_SAMPLER_NULL
+    import Rendering.Lights.StoredLightSample;
 
     /** Null sampler.
         This is provided so that implementations always have a valid sampler struct.

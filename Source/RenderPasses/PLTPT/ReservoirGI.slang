@@ -120,6 +120,8 @@ struct ReservoirGI {
         reservoir.cachedIntensity = packedReservoir.cachedIntensity;
         reservoir.heroWavelength = packedReservoir.heroWavelength;
 
+        reservoir.sls = packedReservoir.sls;
+
         reservoir.bounces[0] = packedReservoir.bounces[0];
         reservoir.bounces[1] = packedReservoir.bounces[1];
 
@@ -136,6 +138,8 @@ struct ReservoirGI {
         packedReservoir.hwss_comps = this.hwss_comps;
         packedReservoir.cachedIntensity = this.cachedIntensity;
         packedReservoir.heroWavelength = this.heroWavelength;
+
+        packedReservoir.sls = this.sls;
 
         packedReservoir.bounces[0] = this.bounces[0];
         packedReservoir.bounces[1] = this.bounces[1];

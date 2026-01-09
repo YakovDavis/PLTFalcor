@@ -478,6 +478,11 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
     mSampleTracer.pProgram->addDefines(getValidResourceDefines(kSampleOutputChannels, renderData));
     mSolveTracer.pProgram->addDefines(defines);
     mSolveTracer.pProgram->addDefines(getValidResourceDefines(kSolveOutputChannels, renderData));
+    if (mpFinalizePass) mpFinalizePass->getProgram()->addDefines(defines);
+    if (mpTemporalReusePass) mpTemporalReusePass->getProgram()->addDefines(defines);
+    if (mpSpatialReusePass) mpSpatialReusePass->getProgram()->addDefines(defines);
+    if (mpTemporalReuseGIPass) mpTemporalReuseGIPass->getProgram()->addDefines(defines);
+    if (mpSpatialReuseGIPass) mpSpatialReuseGIPass->getProgram()->addDefines(defines);
 
     // Prepare program vars. This may trigger shader compilation.
     // The program should have all necessary defines set at this point.
@@ -546,9 +551,11 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
     Buffer::SharedPtr reservoirOutput = mpReservoirBuffers[(mReservoirBufferIndex + 1) % 2];
     if (mDoTemporalReuse) {
         temporalReusePass(pRenderContext, renderData, reservoirOutput, reservoirInput);
-        std::swap(reservoirInput, reservoirOutput);
     }
     if (mDoSpatialReuse) {
+        if (mDoTemporalReuse) {
+            std::swap(reservoirInput, reservoirOutput);
+        }
         spatialReusePass(pRenderContext, renderData, reservoirInput, reservoirOutput);
     }
 
@@ -556,13 +563,23 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
     Buffer::SharedPtr reservoirGIOutput = mpReservoirGIBuffers[(mReservoirBufferIndex + 1) % 2];
     if (mDoTemporalReuseGI) {
         temporalReuseGIPass(pRenderContext, renderData, reservoirGIOutput, reservoirGIInput);
-        std::swap(reservoirGIInput, reservoirGIOutput);
     }
     if (mDoSpatialReuseGI) {
+        if (mDoTemporalReuseGI) {
+            std::swap(reservoirGIInput, reservoirGIOutput);
+        }
         spatialReuseGIPass(pRenderContext, renderData, reservoirGIInput, reservoirGIOutput);
     }
 
-    finalizePass(pRenderContext, renderData, mpReservoirBuffers[mReservoirBufferIndex], mpReservoirGIBuffers[mReservoirBufferIndex]);
+    finalizePass(pRenderContext, renderData, reservoirOutput, reservoirGIOutput);
+
+    if (mDoTemporalReuse && !mDoSpatialReuse) {
+        std::swap(mpReservoirBuffers[mReservoirBufferIndex], mpReservoirBuffers[(mReservoirBufferIndex + 1) % 2]);
+    }
+
+    if (mDoTemporalReuseGI && !mDoSpatialReuseGI) {
+        std::swap(mpReservoirGIBuffers[mReservoirBufferIndex], mpReservoirGIBuffers[(mReservoirBufferIndex + 1) % 2]);
+    }
 
     mReservoirBufferIndex = (mReservoirBufferIndex + 1) % 2;
     mFrameCount++;

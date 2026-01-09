@@ -31,6 +31,7 @@ import Scene.Scene;
 import Utils.Sampling.SampleGeneratorInterface;
 import Rendering.Lights.EmissiveLightSamplerHelpers;
 import Rendering.Lights.EmissiveLightSamplerInterface;
+import Rendering.Lights.StoredLightSample;
 
 /** Emissive light sampler using uniform sampling of the emissive triangles.
 

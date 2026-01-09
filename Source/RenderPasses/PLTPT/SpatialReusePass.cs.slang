@@ -15,27 +15,6 @@ import Scene.Intersection;
 import Scene.ShadingData;
 import Scene.Scene;
 
-float evalTargetPDF(const ShadingData sd, const IMaterialInstance bsdf, const Reservoir reservoir, const uint lobe, hwss_t wavelengths, const float3 wi, const float3 wo)
-{
-    PLTBeam testBeam = {};
-    testBeam.hwss_comps = reservoir.hwss_comps;
-    if (testBeam.hwss_comps > 1) {
-        testBeam.wavelengths = wavelengths;
-    }
-    else {
-        testBeam.wavelengths = hwss_t(reservoir.heroWavelength, wavelengths.yzw);
-    }
-    testBeam.r = wo;
-    testBeam.L = hwss_t(reservoir.cachedIntensity);
-    bsdf.eval(sd, wi, lobe, testBeam);
-    float intensitySum = 0;
-    for (int i = 0; i < testBeam.hwss_comps; ++i)
-    {
-        intensitySum += testBeam.L[i];
-    }
-    return intensitySum / testBeam.hwss_comps;
-}
-
 // Shadow ray epsilon is a small value used to nudge the shadow ray origin along the normal
 // to avoid self-intersection due to numerical precision issues.
 static const float kShadowRayEpsilon = 0.0001f;
@@ -45,9 +24,9 @@ struct SpatialReusePass
     static const uint kMCap = 30;
     static const float FLT_LARGE = 1e20f;
     static const uint kNeighborCount = 3;
-    static const float kDepthThreshold = 0.3f;
-    static const float kNormalThreshold = 0.9f;
-    static const float kSearchRadius = 30.0f;
+    static const float kDepthThreshold = 0.0f;
+    static const float kNormalThreshold = 1.0f;
+    static const float kSearchRadius = 2.0f;
 
     uint2   gFrameDim; ///< Frame dimensions.
     uint    gFrameCount; ///< Frame count since scene was loaded.
@@ -106,24 +85,14 @@ struct SpatialReusePass
 
         if (currentReservoir.M > 0)
         {
-            float3 lightPos = currentReservoir.sls.distant > 0 ? surfaceData.position + currentReservoir.sls.posW : currentReservoir.sls.posW;
-            float3 dir = lightPos - surfaceData.position;
-            float distSq = dot(dir, dir);
-            if (distSq > FLT_EPSILON && all(isfinite(dir)))
-            {
-                dir = normalize(dir);
-                float currPdf = evalTargetPDF(sd, bsdf, currentReservoir, lobes, gWavelengthsDI[bufferIndex], bounce.wi, dir);
-                if (currPdf > 0.f && isfinite(currPdf))
-                {
-                    outputReservoir.update(currentReservoir, currPdf, sg);
-                }
-            }
+            float currPdf = currentReservoir.cachedIntensity;
+            outputReservoir.update(currentReservoir, currPdf, sg);
         }
 
         float3 rayOrigin = computeRayOrigin(surfaceData.position, surfaceData.normal);
 
-        float pSum = currentReservoir.W * currentReservoir.M;
-		float pStar = currentReservoir.W;
+        float pSum = currentReservoir.cachedIntensity * currentReservoir.M;
+		float pStar = currentReservoir.cachedIntensity;
         [unroll]
         for (int i = 0; i < kNeighborCount; i++)
         {
@@ -168,15 +137,15 @@ struct SpatialReusePass
             dir = normalize(dir);
 
             // Check if direction is valid for the current surface (not pointing through backface unless transmission)
-            const bool isTransmission = (lobes & (uint)LobeType::NonDeltaTransmission) != 0 || (lobes & (uint)LobeType::DeltaTransmission);
+            const bool isTransmission = (lobes & (uint)LobeType::NonDeltaTransmission) != 0 || (lobes & (uint)LobeType::DeltaTransmission) != 0;
             const float cosTheta = dot(surfaceData.normal, dir);
             if (!isTransmission && cosTheta <= 0.f)
             {
                 continue;
             }
 
-            float neighborPixelTargetPDF = evalTargetPDF(sd, bsdf, neighborReservoir, lobes, gWavelengthsDI[bufferIndex], bounce.wi, dir);
-            if (isfinite(neighborPixelTargetPDF))
+            float neighborPixelTargetPDF = neighborReservoir.cachedIntensity;
+            if (isfinite(neighborPixelTargetPDF) && neighborPixelTargetPDF > 0)
             {
                 pSum += neighborPixelTargetPDF * neighborReservoir.M;
                 if (outputReservoir.update(neighborReservoir, neighborPixelTargetPDF, sg)) {

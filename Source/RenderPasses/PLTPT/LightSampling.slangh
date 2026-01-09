@@ -317,12 +317,13 @@ bool generateLightSampleFromStored<S: ISampleGenerator>(const StoredLightSample 
     if (lightType == (uint)SampledLightType::Analytic)
         valid = generateAnalyticLightSampleFromStored(sls, sd, sg, wavelengths, ls);
 
+    ls.pdf = sls.pdf;
     ls.lightType = lightType;
-    ls.pdf *= selectionPdf;
+    //ls.pdf *= selectionPdf;
     ls.beam.scale(1.f/selectionPdf);
 
     // Reject samples in non-requested hemispheres.
     const bool isReflection = dot(sd.faceN, ls.dir)*dot(sd.faceN, sd.V) > .0f;
-    return valid && ls.pdf>1e-6f &&
-        !(!sampleReflection && isReflection) && !(!sampleTransmission && !isReflection);
+    return valid; // && ls.pdf>1e-6f &&
+        //!(!sampleReflection && isReflection) && !(!sampleTransmission && !isReflection);
 }

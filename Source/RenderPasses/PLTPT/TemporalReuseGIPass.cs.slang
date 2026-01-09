@@ -21,7 +21,7 @@ struct TemporalReuseGIPass
     static const uint kMCap = 5;
     static const float kMaxOffset = 3.f;
     static const uint kAttemptCount = 1;
-    static const float kDepthThreshold = 0.05f;
+    static const float kDepthThreshold = 0.3f;
     static const float kNormalThreshold = 0.0f;
 
     uint2   gFrameDim; ///< Frame dimensions.
