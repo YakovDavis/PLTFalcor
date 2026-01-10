@@ -116,6 +116,10 @@ struct ReservoirGI {
         }
 
         reservoir.bounceCount = packedReservoir.bounceCount;
+        if (reservoir.bounceCount > 2)
+        {
+            reservoir.bounceCount = 2;
+        }
         reservoir.hwss_comps = packedReservoir.hwss_comps;
         reservoir.cachedIntensity = packedReservoir.cachedIntensity;
         reservoir.heroWavelength = packedReservoir.heroWavelength;

@@ -118,7 +118,7 @@ struct TemporalReuseGIPass
 
         prevReservoir.M = min(prevReservoir.M, kMCap);
 
-        if (prevReservoir.M > 0)
+        if (prevReservoir.M > 0 && prevReservoir.bounceCount > 0)
         {
             float prevPdf = prevReservoir.cachedIntensity;
             outputReservoir.update(prevReservoir, prevPdf, sg);

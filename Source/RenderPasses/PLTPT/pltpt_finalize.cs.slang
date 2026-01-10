@@ -122,8 +122,8 @@ void forwardUnwindDI(const BounceData bounce, const TriangleHit triangleHit, con
 // Replay path and evaluate contributions GI
 void forwardUnwindGI(const BounceData bounce, const TriangleHit triangleHit, const VertexData v, const uint2 pixel, const ReservoirGI resGI, inout PLTBeam beam)
 {
-    // First we replay reservoir bounces
-    for (int p=resGI.bounceCount; p>=1; --p) {
+    const int clampedBounceCount = min(resGI.bounceCount, 2);
+    for (int p = clampedBounceCount; p >= 1; --p) {
         const BounceData bounce1 = resGI.bounces[p - 1];
 
         const TriangleHit triangleHit1 = TriangleHit(bounce1.hit);
@@ -179,40 +179,48 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
             ls.beam.hwss_comps = reservoir.hwss_comps;
             if (validSample) {
                 forwardUnwindDI(bounce, triangleHit, v, pixel, ls.beam);
+                float aoWeight = 1.f;
+                if (reservoir.sls.lightType == (uint)SampledLightType::EnvMap) {
+                    aoWeight = reservoir.W;
+                }
                 finalColor += measure(bounce.pathContribution, ls.beam);
             }
         }
     }
 
+
     // GI
     ReservoirGI reservoirGI = ReservoirGI::unpack(reservoirGIBuffer[reservoirIdx]);
     if (reservoirGI.M > 0) // check valid reservoir
     {
-        const BounceData bounceGI = reservoirGI.bounces[reservoirGI.bounceCount - 1];
+        if (reservoirGI.bounceCount > 0 && reservoirGI.bounceCount <= 2)
+        {
+            const BounceData bounceGI = reservoirGI.bounces[reservoirGI.bounceCount - 1];
 
-        const TriangleHit triangleHitGI = TriangleHit(bounceGI.hit);
-        const VertexData vGI = gScene.getVertexData(triangleHitGI);
+            const TriangleHit triangleHitGI = TriangleHit(bounceGI.hit);
+            const VertexData vGI = gScene.getVertexData(triangleHitGI);
 
-        const uint materialIDGI = gScene.getMaterialID(triangleHitGI.instanceID);
-        const ShadingData sdGI = gScene.materials.prepareShadingData(vGI, materialIDGI, -bounceGI.wi, lod);
+            const uint materialIDGI = gScene.getMaterialID(triangleHitGI.instanceID);
+            const ShadingData sdGI = gScene.materials.prepareShadingData(vGI, materialIDGI, -bounceGI.wi, lod);
 
-        const uint lobes = bounceGI.sampledBsdfLobe;
+            const uint lobes = bounceGI.sampledBsdfLobe;
 
-        const bool sampleReflection = (lobes & (uint)LobeType::NonDeltaReflection)!=0;
-        const bool sampleTransmission = (lobes & (uint)LobeType::NonDeltaTransmission)!=0;
+            const bool sampleReflection = (lobes & (uint)LobeType::NonDeltaReflection)!=0;
+            const bool sampleTransmission = (lobes & (uint)LobeType::NonDeltaTransmission)!=0;
 
-        LightSample ls = {};
-        bool validSample = false;
-        if (reservoirGI.hwss_comps > 1) {
-            validSample = generateLightSampleFromStored(reservoirGI.sls, sampleReflection, sampleTransmission, sdGI, sg, gWavelengthsGI[reservoirIdx], ls);
-        }
-        else {
-            validSample = generateLightSampleFromStored(reservoirGI.sls, sampleReflection, sampleTransmission, sdGI, sg, hwss_t(reservoirGI.heroWavelength, gWavelengthsGI[reservoirIdx].yzw), ls);
-        }
-        ls.beam.hwss_comps = reservoirGI.hwss_comps;
-        if (validSample) {
-            forwardUnwindGI(bounce, triangleHit, v, pixel, reservoirGI, ls.beam);
-            finalColor += measure(bounceGI.pathContribution, ls.beam);
+            LightSample ls = {};
+            bool validSample = false;
+            if (reservoirGI.hwss_comps > 1) {
+                validSample = generateLightSampleFromStored(reservoirGI.sls, sampleReflection, sampleTransmission, sdGI, sg, gWavelengthsGI[reservoirIdx], ls);
+            }
+            else {
+                validSample = generateLightSampleFromStored(reservoirGI.sls, sampleReflection, sampleTransmission, sdGI, sg, hwss_t(reservoirGI.heroWavelength, gWavelengthsGI[reservoirIdx].yzw), ls);
+            }
+            ls.beam.hwss_comps = reservoirGI.hwss_comps;
+            if (validSample) {
+                forwardUnwindGI(bounce, triangleHit, v, pixel, reservoirGI, ls.beam);
+                finalColor += measure(bounceGI.pathContribution, ls.beam);
+            }
         }
     }
     gOutputColor[pixel] = float4(finalColor, 1.f);

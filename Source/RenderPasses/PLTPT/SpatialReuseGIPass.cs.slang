@@ -113,7 +113,7 @@ struct SpatialReuseGIPass
                 continue;
             }
 
-            if (neighborReservoir.M == 0.f)
+            if (neighborReservoir.M == 0 || neighborReservoir.bounceCount < 1)
             {
                 radius = max(kMinRadius, radius * 0.5f);
                 continue;
