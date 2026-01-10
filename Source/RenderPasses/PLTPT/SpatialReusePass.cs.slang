@@ -24,9 +24,9 @@ struct SpatialReusePass
     static const uint kMCap = 30;
     static const float FLT_LARGE = 1e20f;
     static const uint kNeighborCount = 3;
-    static const float kDepthThreshold = 0.0f;
-    static const float kNormalThreshold = 1.0f;
-    static const float kSearchRadius = 2.0f;
+    static const float kDepthThreshold = 0.3f;
+    static const float kNormalThreshold = 0.9f;
+    static const float kSearchRadius = 30.0f;
 
     uint2   gFrameDim; ///< Frame dimensions.
     uint    gFrameCount; ///< Frame count since scene was loaded.
