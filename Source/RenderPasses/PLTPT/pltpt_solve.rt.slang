@@ -34,6 +34,20 @@
 RWStructuredBuffer<hwss_t> gWavelengthsDI;  ///< Buffer with wavelengths for direct illumination.
 RWStructuredBuffer<hwss_t> gWavelengthsGI;  ///< Buffer with wavelengths for global illumination.
 
+static const float kBsdfPdfMinValue = 0.00001f;
+
+float getFirstBounceBsdfPdf(uint2 pixel, float3 wo, float heroWavelength) {
+    let lod = ExplicitLodTextureSampler(0.f);
+    BounceData bounce = readBounce(0, pixel);
+    const TriangleHit hit = TriangleHit(bounce.hit);
+    const VertexData v = gScene.getVertexData(hit);
+    const uint materialID = gScene.getMaterialID(hit.instanceID);
+    ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -bounce.wi, lod);
+    IMaterialInstance bsdf = gScene.materials.getMaterialInstance(sd, lod);
+
+    return 1; // clamp(bsdf.pdf(sd, wo, heroWavelength), kBsdfPdfMinValue, 1);
+}
+
 /** Path measurement */
 
 void forwardHWSSMis(const IMaterialInstance bsdf,
@@ -234,9 +248,10 @@ void evalEmissive(inout PLTSolve solveData,
                 sls.posW = firstNonEmissiveSD.posW;
                 Reservoir newRes = {};
                 const float targetPDF = beam.getAverageIntensity();
-                //newRes.update(sls, targetPDF, sls.pdf, solveData.sg);
-                newRes.weightSum = targetPDF / clamp(sls.pdf, 0, 1);
+                const float weight = targetPDF * sls.pdf;
+                newRes.weightSum = weight;
                 newRes.M = 1;
+                newRes.W = weight;
                 newRes.W = targetPDF;
                 newRes.sls = sls;
                 newRes.hwss_comps = beam.hwss_comps;
@@ -260,11 +275,11 @@ void evalEmissive(inout PLTSolve solveData,
                 sls.posW = firstNonEmissiveSD.posW;
                 ReservoirGI newRes = {};
                 const float targetPDF = beam.getAverageIntensity();
-                //newRes.update(sls, targetPDF, sls.pdf, solveData.sg);
-                newRes.weightSum = targetPDF / clamp(sls.pdf, 0, 1);
+                const float sourcePDF = getFirstBounceBsdfPdf(pixel, -beam.r, beam.wavelengths[0]);
+                const float weight = targetPDF / sourcePDF;
+                newRes.weightSum = weight;
                 newRes.M = 1;
-                const float bsdfPdf = firstNonEmissiveBSDF.pdf(firstNonEmissiveSD, bounce.wi, beam.wavelengths.x);
-                newRes.W = targetPDF * bsdfPdf;
+                newRes.W = weight;
                 newRes.sls = sls;
                 newRes.hwss_comps = beam.hwss_comps;
                 newRes.cachedIntensity = beam.getAverageIntensity();
@@ -457,7 +472,7 @@ void NEE(inout PLTSolve solveData,
     // Finally, evaluate NEE contributions
     evalNEE(solveData, bounceIdx, bounce, pixel, V, sd.materialID, bsdf, ls.beam, evalCurrentVertex);
 
-    BounceData firstBounce = readBounce(0, pixel);;
+    BounceData firstBounce = readBounce(0, pixel);
     if (firstBounce.flags.dispersiveDeltaSegment)
         ls.beam.collapseToHeroWavelengthOnly();
 
@@ -478,10 +493,10 @@ void NEE(inout PLTSolve solveData,
         }
         Reservoir newRes = {};
         const float targetPDF = ls.beam.getAverageIntensity();
-        //newRes.update(sls, targetPDF, sls.pdf, solveData.sg);
-        newRes.weightSum = targetPDF / clamp(sls.pdf, 0, 1);
+        const float weight = targetPDF * sls.pdf;
+        newRes.weightSum = weight;
         newRes.M = 1;
-        newRes.W = targetPDF;
+        newRes.W = weight;
         newRes.sls = sls;
         newRes.hwss_comps = ls.beam.hwss_comps;
         newRes.cachedIntensity = ls.beam.getAverageIntensity();
@@ -509,11 +524,11 @@ void NEE(inout PLTSolve solveData,
         }
         ReservoirGI newRes = {};
         const float targetPDF = ls.beam.getAverageIntensity();
-        //newRes.update(sls, targetPDF, sls.pdf, solveData.sg);
-        newRes.weightSum = targetPDF / clamp(sls.pdf, 0, 1);
+        const float sourcePDF = getFirstBounceBsdfPdf(pixel, -ls.beam.r, ls.beam.wavelengths[0]);
+        const float weight = targetPDF / sourcePDF;
+        newRes.weightSum = weight;
         newRes.M = 1;
-        const float bsdfPdf = bsdf.pdf(sd, ls.dir, ls.beam.wavelengths.x);
-        newRes.W = targetPDF * bsdfPdf;
+        newRes.W = weight;
         newRes.sls = sls;
         newRes.hwss_comps = ls.beam.hwss_comps;
         newRes.cachedIntensity = ls.beam.getAverageIntensity();
@@ -590,10 +605,10 @@ void onMiss(inout PLTSolve solveData,
             sls.posW = (-wo) * kRayTMax;
             Reservoir newRes = {};
             const float targetPDF = beam.getAverageIntensity();
-            //newRes.update(sls, targetPDF, sls.pdf, solveData.sg);
-            newRes.weightSum = targetPDF / clamp(sls.pdf, 0, 1);
+            const float weight = targetPDF * sls.pdf;
+            newRes.weightSum = weight;
             newRes.M = 1;
-            newRes.W = targetPDF;
+            newRes.W = weight;
             newRes.sls = sls;
             newRes.hwss_comps = beam.hwss_comps;
             newRes.cachedIntensity = beam.getAverageIntensity();
@@ -616,11 +631,11 @@ void onMiss(inout PLTSolve solveData,
             sls.posW = (-wo) * kRayTMax;
             ReservoirGI newRes = {};
             const float targetPDF = beam.getAverageIntensity();
-            //newRes.update(sls, targetPDF, sls.pdf, solveData.sg);
-            newRes.weightSum = targetPDF / clamp(sls.pdf, 0, 1);
+            const float sourcePDF = getFirstBounceBsdfPdf(pixel, -beam.r, beam.wavelengths[0]);
+            const float weight = targetPDF / sourcePDF;
+            newRes.weightSum = weight;
             newRes.M = 1;
-            const float bsdfPdf = bsdf.pdf(sd, wo, beam.wavelengths.x);
-            newRes.W = targetPDF * bsdfPdf;
+            newRes.W = weight;
             newRes.sls = sls;
             newRes.hwss_comps = beam.hwss_comps;
             newRes.cachedIntensity = beam.getAverageIntensity();

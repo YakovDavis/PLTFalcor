@@ -181,11 +181,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
             ls.beam.hwss_comps = reservoir.hwss_comps;
             if (validSample) {
                 forwardUnwindDI(bounce, triangleHit, v, pixel, ls.beam, reservoir.cachedIntensity);
-                float aoWeight = 1.f;
-                if (reservoir.sls.lightType == (uint)SampledLightType::EnvMap) {
-                    aoWeight = reservoir.W;
-                }
-                finalColor += measure(bounce.pathContribution, ls.beam);
+                finalColor += measure(bounce.pathContribution, ls.beam) * clamp(reservoir.W, 0, 1);
                 reservoirBuffer[reservoirIdx] = reservoir.pack();
             }
         }
@@ -222,7 +218,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
             ls.beam.hwss_comps = reservoirGI.hwss_comps;
             if (validSample) {
                 forwardUnwindGI(bounce, triangleHit, v, pixel, reservoirGI, ls.beam, reservoirGI.cachedIntensity);
-                finalColor += measure(bounceGI.pathContribution, ls.beam);
+                finalColor += measure(bounceGI.pathContribution, ls.beam) * clamp(reservoirGI.W, 0, 1);
                 reservoirGIBuffer[reservoirIdx] = reservoirGI.pack();
             }
         }
