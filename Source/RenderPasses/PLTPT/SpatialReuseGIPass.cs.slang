@@ -67,10 +67,17 @@ struct SpatialReuseGIPass
         // Get pixel Data for the current pixel.
         SurfaceData surfaceData = SurfaceData::unpack(gSurfaceData[bufferIndex]);
         if (!surfaceData.isValid())
+        {
+            gOutGIReservoirs[bufferIndex] = currentReservoir.pack();
             return;
+        }
 
         // Retrieve bounce for bsdf eval
         const BounceData bounce = firstBounceBuffer[bufferIndex];
+        if ((bounce.sampledBsdfLobe & (uint)LobeType::NonDeltaTransmission) != 0) {
+            gOutGIReservoirs[bufferIndex] = currentReservoir.pack();
+            return;
+        }
 
         const TriangleHit triangleHit = TriangleHit(bounce.hit);
         const VertexData v = gScene.getVertexData(triangleHit);

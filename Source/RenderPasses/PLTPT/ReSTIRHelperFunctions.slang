@@ -9,6 +9,8 @@ import Scene.Material.ShadingUtils;
 
 import Utils.Math.BitTricks;
 
+import Reservoir;
+
 /** Check if a neighboring pixel is valid based on the similarity of their normal vectors and depth values.
  */
 bool isValidNeighbor(float3 norm, float3 neighborNorm, float depth, float neighborDepth, float normalThreshold, float depthThreshold)
@@ -89,6 +91,36 @@ uint2 getRandomNeighborPixel<S : ISampleGenerator>(uint2 pixel, inout S sg, floa
 
     // Return the random neighboring pixel after rounding to the nearest integer value, because pixel coordinates are integers.
     return uint2(round(randomPixel));
+}
+
+float evalTargetPDF(const ShadingData sd, const IMaterialInstance bsdf, const Reservoir reservoir, const uint lobe, hwss_t wavelengths, const float3 wi, const float3 wo)
+{
+    PLTBeam testBeam = {};
+    testBeam.hwss_comps = reservoir.hwss_comps;
+    if (testBeam.hwss_comps > 1) {
+        testBeam.wavelengths = wavelengths;
+    }
+    else {
+        testBeam.wavelengths = hwss_t(reservoir.heroWavelength, wavelengths.yzw);
+    }
+    testBeam.r = wo;
+    testBeam.L = hwss_t(reservoir.cachedIntensity);
+    bsdf.eval(sd, wi, lobe, testBeam);
+    float bsdfFactor = testBeam.getAverageIntensity();
+
+    float geometryFactor = 1.f;
+    if (reservoir.sls.distant == 0) {
+        const float3 pointToLightVec = reservoir.sls.posW - sd.posW;
+        const float distSq = dot(pointToLightVec, pointToLightVec);
+        float normalFactor = 1.f;
+        if (reservoir.sls.lightType == 1u /*Emissive*/) {
+            const EmissiveTriangle tri = gScene.lightCollection.getTriangle(reservoir.sls.triangleOrLightIndex);
+            //normalFactor = clamp(dot(wo, tri.normal), 0, 1);
+        }
+        geometryFactor = clamp(normalFactor / distSq, 0, 1);
+    }
+
+    return bsdfFactor * geometryFactor;
 }
 
 

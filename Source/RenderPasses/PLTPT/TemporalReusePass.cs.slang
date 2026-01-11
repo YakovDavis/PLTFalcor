@@ -130,7 +130,7 @@ struct TemporalReusePass
         if (prevReservoir.M > 0)
         {
             float3 dir = normalize(lightPos - surfaceData.position);
-            float prevPdf = prevReservoir.cachedIntensity;
+            float prevPdf = evalTargetPDF(sd, bsdf, prevReservoir, lobes, gWavelengthsDI[bufferIndex], bounce.wi, dir);
             outputReservoir.update(prevReservoir, prevPdf, sg);
         }
 
@@ -138,7 +138,7 @@ struct TemporalReusePass
         {
             float3 currLightPos = currentReservoir.sls.distant > 0 ? surfaceData.position + currentReservoir.sls.posW : currentReservoir.sls.posW;
             float3 dir = normalize(currLightPos - surfaceData.position);
-            float currPdf = currentReservoir.cachedIntensity;
+            float currPdf = evalTargetPDF(sd, bsdf, currentReservoir, lobes, gWavelengthsDI[bufferIndex], bounce.wi, dir);
             outputReservoir.update(currentReservoir, currPdf, sg);
         }
 

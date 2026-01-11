@@ -56,6 +56,8 @@ import Path;
 import Rendering.PLT;
 import Reservoir;
 import ReservoirGI;
+import Rendering.Lights.StoredLightSample;
+import ReSTIRHelperFunctions;
 
 import Rendering.Lights.LightHelpers;
 import Rendering.Lights.EmissiveLightSampler;
@@ -186,5 +188,13 @@ float RR(const float rrVal, const float rrE, const float sample) {
 float3 getViewRay(uint2 pixel, uint2 frameDim)
 {
     return -normalize(gScene.camera.computeNonNormalizedRayDirPinhole(pixel, frameDim));
+}
+
+int getLastRealBounceIdx(const BounceData bounce, const int bounceIdx)
+{
+    if (bounce.sampledBsdfLobe == (uint)LobeType::None) {
+        return bounceIdx - 1;
+    }
+    return bounceIdx;
 }
 

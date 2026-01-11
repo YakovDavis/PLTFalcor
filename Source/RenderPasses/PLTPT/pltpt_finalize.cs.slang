@@ -200,7 +200,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
             const VertexData vGI = gScene.getVertexData(triangleHitGI);
 
             const uint materialIDGI = gScene.getMaterialID(triangleHitGI.instanceID);
-            const ShadingData sdGI = gScene.materials.prepareShadingData(vGI, materialIDGI, -bounceGI.wi, lod);
+            const ShadingData sdGI = gScene.materials.prepareShadingData(vGI, materialIDGI, bounceGI.wi, lod);
 
             const uint lobes = bounceGI.sampledBsdfLobe;
 

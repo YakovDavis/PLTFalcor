@@ -321,5 +321,7 @@ bool generateLightSampleFromStored<S: ISampleGenerator>(const StoredLightSample 
     ls.lightType = lightType;
     ls.beam.scale(1.f/selectionPdf);
 
-    return valid;
+    // Reject samples in non-requested hemispheres.
+    const bool isReflection = dot(sd.faceN, ls.dir)*dot(sd.faceN, sd.V) > .0f;
+    return valid && !(!sampleReflection && isReflection) && !(!sampleTransmission && !isReflection);
 }

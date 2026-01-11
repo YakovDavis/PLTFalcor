@@ -78,6 +78,9 @@ struct ReservoirGI {
     [mutating]
     bool update<S : ISampleGenerator>(inout ReservoirGI reservoir, const float targetPDF, inout S sg)
     {
+        if (targetPDF == 0 || reservoir.W == 0 || reservoir.M == 0) {
+            return false;
+        }
         float weight = targetPDF * reservoir.W * reservoir.M;
         this.weightSum += weight;
         this.M += reservoir.M;

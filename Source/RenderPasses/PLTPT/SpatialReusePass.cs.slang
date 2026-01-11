@@ -85,7 +85,9 @@ struct SpatialReusePass
 
         if (currentReservoir.M > 0)
         {
-            float currPdf = currentReservoir.cachedIntensity;
+            float3 lightPos = currentReservoir.sls.distant > 0 ? surfaceData.position + currentReservoir.sls.posW : currentReservoir.sls.posW;
+            float3 dir = normalize(lightPos - surfaceData.position);
+            float currPdf = evalTargetPDF(sd, bsdf, currentReservoir, lobes, gWavelengthsDI[bufferIndex], bounce.wi, dir);;
             outputReservoir.update(currentReservoir, currPdf, sg);
         }
 
@@ -144,7 +146,7 @@ struct SpatialReusePass
                 continue;
             }
 
-            float neighborPixelTargetPDF = neighborReservoir.cachedIntensity;
+            float neighborPixelTargetPDF = evalTargetPDF(sd, bsdf, neighborReservoir, lobes, gWavelengthsDI[bufferIndex], bounce.wi, dir);
             if (isfinite(neighborPixelTargetPDF) && neighborPixelTargetPDF > 0)
             {
                 pSum += neighborPixelTargetPDF * neighborReservoir.M;
