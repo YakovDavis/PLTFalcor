@@ -84,7 +84,7 @@ private:
     EmissiveLightSampler::SharedPtr mpEmissiveSampler;
 
     uint32_t                    mTileSize = 512;                ///< Size of a tile
-    uint                        mMaxBounces = 3;               ///< Max number of indirect bounces (0 = none).
+    uint                        mMaxBounces = 2;               ///< Max number of indirect bounces (0 = none).
     Buffer::SharedPtr           mpBounceBuffer;                 ///< Per-tile bounce buffer.
     uint                        mMaxBeams = 4;                 ///< Max beams to be saved for the final pass and reuse
     uint                        mReservoirBufferIndex = 0;
@@ -97,6 +97,8 @@ private:
     std::vector<Buffer::SharedPtr> mpSurfaceData;                    ///< Pointer to the buffer for surface data (current and prev frame).
 
     Buffer::SharedPtr mpFirstBounceBuffer;                       ///< Pointer to the buffer for first bounce data (for entire current frame) for finalize pass
+
+    Buffer::SharedPtr mpFirstBouncePdfBuffer;                       ///< Pointer to the buffer for first bounce pdf data
 
     // Configuration
     uint32_t                    mSelectedSampleGenerator = SAMPLE_GENERATOR_DEFAULT;            ///< Which pseudorandom sample generator to use.
@@ -118,7 +120,7 @@ private:
     bool                        mAlphaMasking = true;
 
     bool                        mDoTemporalReuse = true;
-    bool                        mDoSpatialReuse = true;
+    bool                        mDoSpatialReuse = false;
 
     bool                        mDoTemporalReuseGI = true;
     bool                        mDoSpatialReuseGI = true;

@@ -33,6 +33,7 @@ import SurfaceData;
 
 RWStructuredBuffer<PackedSurfaceData> gSurfaceData;
 RWStructuredBuffer<BounceData> firstBounceBuffer;
+RWStructuredBuffer<float> firstBouncePdfBuffer;
 
 /** Path construction */
 
@@ -97,10 +98,6 @@ void scatterTriangleMeshClosestHit(inout Path path, BuiltInTriangleIntersectionA
     let bsdf = gScene.materials.getMaterialInstance(sd, lod);
     const BSDFProperties bsdfProp = bsdf.getProperties(sd);
 
-    if (path.length == 0) {
-        recordSurfaceData(path, sd);
-    }
-
     if (kAlphaMasking && sd.opacity == .0f) {
         // Alpha mask
         path.origin = sd.computeNewRayOrigin(false);
@@ -130,6 +127,11 @@ void scatterTriangleMeshClosestHit(inout Path path, BuiltInTriangleIntersectionA
     if (!isDelta && path.flags.onlyDelta) {
         gOutputAlbedo[pixel] = float4(bsdfProp.albedo, 1.f);
         gOutputNormal[pixel] = float4(mul(float3x3(gScene.camera.data.viewMat), sd.N), 1.f);
+    }
+
+    if (path.length == 0) {
+        recordSurfaceData(path, sd);
+        firstBouncePdfBuffer[pixel.x + pixel.y * kOutputSize.x] = bsdfSample.pdf;
     }
 
     if (shouldEndPath) {

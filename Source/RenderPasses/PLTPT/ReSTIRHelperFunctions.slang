@@ -112,12 +112,7 @@ float evalTargetPDF(const ShadingData sd, const IMaterialInstance bsdf, const Re
     if (reservoir.sls.distant == 0) {
         const float3 pointToLightVec = reservoir.sls.posW - sd.posW;
         const float distSq = dot(pointToLightVec, pointToLightVec);
-        float normalFactor = 1.f;
-        if (reservoir.sls.lightType == 1u /*Emissive*/) {
-            const EmissiveTriangle tri = gScene.lightCollection.getTriangle(reservoir.sls.triangleOrLightIndex);
-            //normalFactor = clamp(dot(wo, tri.normal), 0, 1);
-        }
-        geometryFactor = clamp(normalFactor / distSq, 0, 1);
+        geometryFactor = clamp(1.f / distSq, 0, 1);
     }
 
     return bsdfFactor * geometryFactor;

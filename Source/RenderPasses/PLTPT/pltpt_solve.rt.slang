@@ -33,19 +33,21 @@
 
 RWStructuredBuffer<hwss_t> gWavelengthsDI;  ///< Buffer with wavelengths for direct illumination.
 RWStructuredBuffer<hwss_t> gWavelengthsGI;  ///< Buffer with wavelengths for global illumination.
+StructuredBuffer<float> firstBouncePdfBuffer;
 
-static const float kBsdfPdfMinValue = 0.01f;
+static const float kBsdfPdfMinValue = 0.0f;
 
 float getFirstBounceBsdfPdf(uint2 pixel, float3 wo, float heroWavelength) {
+    /*BounceData bounce = readBounce(0, pixel);
+    const TriangleHit triangleHit = TriangleHit(bounce.hit);
+    const VertexData v = gScene.getVertexData(triangleHit);
+    const uint materialID = gScene.getMaterialID(triangleHit.instanceID);
     let lod = ExplicitLodTextureSampler(0.f);
-    BounceData bounce = readBounce(0, pixel);
-    const TriangleHit hit = TriangleHit(bounce.hit);
-    const VertexData v = gScene.getVertexData(hit);
-    const uint materialID = gScene.getMaterialID(hit.instanceID);
-    ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -bounce.wi, lod);
-    IMaterialInstance bsdf = gScene.materials.getMaterialInstance(sd, lod);
 
-    return clamp(bsdf.pdf(sd, wo, heroWavelength), kBsdfPdfMinValue, 1);
+    const ShadingData sd = gScene.materials.prepareShadingData(v, materialID, bounce.wi, lod);
+    let bsdf = gScene.materials.getMaterialInstance(sd, lod);*/
+
+    return firstBouncePdfBuffer[pixel.x + pixel.y * kOutputSize.x];
 }
 
 /** Path measurement */
@@ -281,7 +283,8 @@ void evalEmissive(inout PLTSolve solveData,
                 if (targetPDF <= 0) {
                     return;
                 }
-                const float sourcePDF = getFirstBounceBsdfPdf(pixel, -beam.r, beam.wavelengths[0]);
+                const float sourcePDF = getFirstBounceBsdfPdf(pixel, -beam.r, beam.wavelengths.x);
+                sls.pdf = sourcePDF; // tmp
                 const float weight = targetPDF / sourcePDF;
                 newRes.weightSum = weight;
                 newRes.M = 1;
@@ -541,7 +544,8 @@ void NEE(inout PLTSolve solveData,
         if (targetPDF <= 0) {
             return;
         }
-        const float sourcePDF = getFirstBounceBsdfPdf(pixel, -ls.beam.r, ls.beam.wavelengths[0]);
+        const float sourcePDF = getFirstBounceBsdfPdf(pixel, -ls.beam.r, ls.beam.wavelengths.x);
+        sls.pdf = sourcePDF; // tmp
         const float weight = targetPDF / sourcePDF;
         newRes.weightSum = weight;
         newRes.M = 1;
@@ -661,7 +665,8 @@ void onMiss(inout PLTSolve solveData,
             if (targetPDF <= 0) {
                 return;
             }
-            const float sourcePDF = getFirstBounceBsdfPdf(pixel, -beam.r, beam.wavelengths[0]);
+            const float sourcePDF = getFirstBounceBsdfPdf(pixel, -beam.r, beam.wavelengths.x);
+            sls.pdf = sourcePDF; // tmp
             const float weight = targetPDF / sourcePDF;
             newRes.weightSum = weight;
             newRes.M = 1;

@@ -514,9 +514,11 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
     varSetter(mSampleTracer.pVars->getRootVar());
     mSampleTracer.pVars->getRootVar()["gSurfaceData"] = mpSurfaceData[mReservoirBufferIndex];
     mSampleTracer.pVars->getRootVar()["firstBounceBuffer"] = mpFirstBounceBuffer;
+    mSampleTracer.pVars->getRootVar()["firstBouncePdfBuffer"] = mpFirstBouncePdfBuffer;
     varSetter(mSolveTracer.pVars->getRootVar());
     mSolveTracer.pVars->getRootVar()["gWavelengthsDI"] = mpWavelengthsDIBuffer;
     mSolveTracer.pVars->getRootVar()["gWavelengthsGI"] = mpWavelengthsGIBuffer;
+    mSolveTracer.pVars->getRootVar()["firstBouncePdfBuffer"] = mpFirstBouncePdfBuffer;
 
 
     // Bind I/O buffers. These needs to be done per-frame as the buffers may change anytime.
@@ -708,6 +710,7 @@ void PLTPT::createBuffers(RenderContext* pRenderContext, const RenderData& rende
     mpReservoirGIBuffers.clear();
     mpSurfaceData.clear();
     mpFirstBounceBuffer = nullptr;
+    mpFirstBouncePdfBuffer = nullptr;
     mpWavelengthsDIBuffer = nullptr;
 
     mpBounceBuffer = Buffer::createStructured(
@@ -721,6 +724,12 @@ void PLTPT::createBuffers(RenderContext* pRenderContext, const RenderData& rende
         Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
     );
     mpFirstBounceBuffer->setName("PLTPT::mpFirstBounceBuffer");
+
+    mpFirstBouncePdfBuffer = Buffer::createStructured(
+        this->mpDevice.get(), 4u, (uint32_t)pixelCount,
+        Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
+    );
+    mpFirstBouncePdfBuffer->setName("PLTPT::mpFirstBouncePdfBuffer");
 
     mpWavelengthsDIBuffer = Buffer::createStructured(
         this->mpDevice.get(), kWavelengthsSizeBytes, (uint32_t)pixelCount,
