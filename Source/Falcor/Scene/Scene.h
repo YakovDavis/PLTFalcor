@@ -960,6 +960,8 @@ namespace Falcor
         */
         UpdateFlags getUpdates() const { return mUpdates; }
 
+        void simulateCameraUpdate();
+
         /** Render the scene using the rasterizer.
             Note the rasterizer state bound to 'pState' is ignored.
             \param[in] pRenderContext Render context.

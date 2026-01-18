@@ -392,6 +392,12 @@ void PLTPT::renderUI(Gui::Widgets& widget) {
 }
 
 void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData) {
+    if (mFrameCount == 25) {
+        mpScene->simulateCameraUpdate();
+    }
+    else if (mFrameCount > 25 + 2) {
+        return;
+    }
     // Update refresh flag if options that affect the output have changed.
     auto& dict = renderData.getDictionary();
     const uint2& targetDim = renderData.getDefaultTextureDims();

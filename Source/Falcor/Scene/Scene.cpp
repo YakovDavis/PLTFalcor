@@ -1869,6 +1869,10 @@ namespace Falcor
         return mUpdates;
     }
 
+    void Scene::simulateCameraUpdate() {
+        mUpdates |= UpdateFlags::CameraPropertiesChanged;
+    }
+
     void Scene::renderUI(Gui::Widgets& widget)
     {
         if (mpAnimationController->hasAnimations())

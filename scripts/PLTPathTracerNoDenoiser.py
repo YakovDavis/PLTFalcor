@@ -20,7 +20,7 @@ def render_graph_PLTPT():
     #g.addEdge("PLTPT.color", "TAA.colorIn")
     #g.addEdge("GBufferRT.mvec", "TAA.motionVecs")
 
-    AccumulatePass = createPass("AccumulatePass", {'enabled': False, 'precisionMode': AccumulatePrecision.Double})
+    AccumulatePass = createPass("AccumulatePass", {'enabled': True, 'precisionMode': AccumulatePrecision.Double})
     g.addPass(AccumulatePass, "AccumulatePass")
 
     ToneMapper = createPass("ToneMapper", {'autoExposure': True, 'exposureCompensation': 0.0})
