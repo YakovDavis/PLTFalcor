@@ -31,8 +31,9 @@ struct TemporalReuseGIPass
     Texture2D<float2> gMotionVectors; ///< 2D screen space motion vector.
     StructuredBuffer<PackedSurfaceData> gSurfaceData;   ///< Surface data for the current frame.
     StructuredBuffer<PackedSurfaceData> gPrevSurfaceData;   ///< Surface data for the previous frame.
-    RWStructuredBuffer<PackedReservoirGI> gPrevGIReservoirs;  ///< Buffer with reservoirs from the previous frame.
-    StructuredBuffer<PackedReservoirGI> gGIReservoirs; ///< Buffer with reservoirs.
+    StructuredBuffer<PackedReservoirGI> gPrevGIReservoirs;  ///< Read-only buffer with reservoirs from the previous frame.
+    StructuredBuffer<PackedReservoirGI> gGIReservoirs; ///< Buffer with reservoirs from the current frame's initial sampling pass.
+    RWStructuredBuffer<PackedReservoirGI> gOutGIReservoirs; ///< Output buffer for temporally merged reservoirs.
     StructuredBuffer<BounceData> firstBounceBuffer; ///< Buffer with first bounces from the camera rays.
     StructuredBuffer<hwss_t> gWavelengthsGI; ///< Wavelengths used in current pass.
 
@@ -50,17 +51,18 @@ struct TemporalReuseGIPass
         float2 motionVec = gMotionVectors[pixel] * gFrameDim;
         float2 reprojPosFloat = float2(pixel) + motionVec;
 
-        int2 reprojPosInt = int2(round(reprojPosFloat));
-
-        if (any(reprojPosInt < int2(1)) || any(reprojPosInt >= int2(gFrameDim))) {
-            gPrevGIReservoirs[bufferIndex] = currentReservoir.pack();
+        // Reject reprojection before rounding; rounding can pull out-of-frame positions in-bounds.
+        if (any(reprojPosFloat < 0.f) || any(reprojPosFloat >= float2(gFrameDim))) {
+            gOutGIReservoirs[bufferIndex] = currentReservoir.pack();
             return;
         }
-        uint2 reprojPos = uint2(reprojPosInt);
+        uint2 reprojPos = uint2(round(reprojPosFloat));
 
         SurfaceData surfaceData = SurfaceData::unpack(gSurfaceData[bufferIndex]);
-        if (!surfaceData.isValid())
+        if (!surfaceData.isValid()) {
+            gOutGIReservoirs[bufferIndex] = currentReservoir.pack();
             return;
+        }
 
         SurfaceData prevSurfaceData;
         uint2 prevPixel = reprojPos;
@@ -76,7 +78,7 @@ struct TemporalReuseGIPass
                 offset.y = int((sampleNext1D(sg) - 0.5) * kMaxOffset);
             }
             int2 prevPixelInt = int2(reprojPos) + offset;
-            if (any(prevPixelInt < int2(1)) || any(prevPixelInt >= int2(gFrameDim))) // 1 and not 0 because 0 causes artifacts
+            if (any(prevPixelInt < int2(0)) || any(prevPixelInt >= int2(gFrameDim)))
                 continue;
             prevPixel = uint2(prevPixelInt);
 
@@ -92,7 +94,7 @@ struct TemporalReuseGIPass
         }
 
         if (!neighborFound) {
-            gPrevGIReservoirs[bufferIndex] = currentReservoir.pack();
+            gOutGIReservoirs[bufferIndex] = currentReservoir.pack();
             return;
         }
 
@@ -112,7 +114,8 @@ struct TemporalReuseGIPass
 
         uint prevBufferIndex = prevPixel.y * gFrameDim.x + prevPixel.x;
 
-        ReservoirGI outputReservoir;
+        ReservoirGI outputReservoir = {};
+        outputReservoir.hwss_comps = currentReservoir.hwss_comps;
 
         ReservoirGI prevReservoir = ReservoirGI::unpack(gPrevGIReservoirs[prevBufferIndex]);
 
@@ -132,7 +135,7 @@ struct TemporalReuseGIPass
 
         outputReservoir.W = outputReservoir.W  > 0.f ? outputReservoir.weightSum / (outputReservoir.M * outputReservoir.W) : 0.f;
 
-        gPrevGIReservoirs[bufferIndex] = outputReservoir.pack();
+        gOutGIReservoirs[bufferIndex] = outputReservoir.pack();
     }
 }
 

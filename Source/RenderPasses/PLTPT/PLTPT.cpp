@@ -392,12 +392,12 @@ void PLTPT::renderUI(Gui::Widgets& widget) {
 }
 
 void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData) {
-    if (mFrameCount == 25) {
+    /*if (mFrameCount == 25) {
         mpScene->simulateCameraUpdate();
     }
     else if (mFrameCount > 25 + 2) {
         return;
-    }
+    }*/
     // Update refresh flag if options that affect the output have changed.
     auto& dict = renderData.getDictionary();
     const uint2& targetDim = renderData.getDefaultTextureDims();
@@ -561,9 +561,6 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
         temporalReusePass(pRenderContext, renderData, reservoirOutput, reservoirInput);
     }
     if (mDoSpatialReuse) {
-        if (mDoTemporalReuse) {
-            std::swap(reservoirInput, reservoirOutput);
-        }
         spatialReusePass(pRenderContext, renderData, reservoirInput, reservoirOutput);
     }
 
@@ -573,21 +570,12 @@ void PLTPT::execute(RenderContext* pRenderContext, const RenderData& renderData)
         temporalReuseGIPass(pRenderContext, renderData, reservoirGIOutput, reservoirGIInput);
     }
     if (mDoSpatialReuseGI) {
-        if (mDoTemporalReuseGI) {
-            std::swap(reservoirGIInput, reservoirGIOutput);
-        }
         spatialReuseGIPass(pRenderContext, renderData, reservoirGIInput, reservoirGIOutput);
     }
 
-    finalizePass(pRenderContext, renderData, reservoirOutput, reservoirGIOutput);
-
-    if (mDoTemporalReuse && !mDoSpatialReuse) {
-        std::swap(mpReservoirBuffers[mReservoirBufferIndex], mpReservoirBuffers[(mReservoirBufferIndex + 1) % 2]);
-    }
-
-    if (mDoTemporalReuseGI && !mDoSpatialReuseGI) {
-        std::swap(mpReservoirGIBuffers[mReservoirBufferIndex], mpReservoirGIBuffers[(mReservoirBufferIndex + 1) % 2]);
-    }
+    const Buffer::SharedPtr reservoirsForFinalize = mDoSpatialReuse ? reservoirOutput : reservoirInput;
+    const Buffer::SharedPtr reservoirsGIForFinalize = mDoSpatialReuseGI ? reservoirGIOutput : reservoirGIInput;
+    finalizePass(pRenderContext, renderData, reservoirsForFinalize, reservoirsGIForFinalize);
 
     mReservoirBufferIndex = (mReservoirBufferIndex + 1) % 2;
     mFrameCount++;
@@ -789,6 +777,7 @@ void PLTPT::temporalReusePass(RenderContext* pRenderContext, const RenderData& r
 
     var["gPrevSurfaceData"] = mpSurfaceData[(mReservoirBufferIndex + 1) % 2];
     var["gPrevReservoirs"] = prevReservoirs;
+    var["gOutReservoirs"] = currReservoirs;
 
     var["firstBounceBuffer"] = mpFirstBounceBuffer;
     var["gWavelengthsDI"] = mpWavelengthsDIBuffer;
@@ -843,6 +832,7 @@ void PLTPT::temporalReuseGIPass(RenderContext* pRenderContext, const RenderData&
 
     var["gPrevSurfaceData"] = mpSurfaceData[(mReservoirBufferIndex + 1) % 2];
     var["gPrevGIReservoirs"] = prevReservoirs;
+    var["gOutGIReservoirs"] = currReservoirs;
 
     var["firstBounceBuffer"] = mpFirstBounceBuffer;
     var["gWavelengthsGI"] = mpWavelengthsGIBuffer;
